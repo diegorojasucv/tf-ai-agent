@@ -1,0 +1,9 @@
+
+.databricks
+.venv/
+notebooks/
+.DS_Store
+__pycache__/
+*.py[cod]
+.agents/
+.notebooks/
