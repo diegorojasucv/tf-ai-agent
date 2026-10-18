@@ -1,0 +1,80 @@
+# Tests permitidos. Firmas verificadas contra los macros instalados (dbt_utils 1.4.1, dbt_expectations 0.10.10).
+# level: column = va bajo `columns`; model = va bajo el modelo.
+# Todo test fuera de este catálogo (macro propia del proyecto) se considera complejo y requiere aprobación humana.
+tests:
+  not_null:
+    package: null
+    level: column
+    required: []
+    optional: []
+  unique:
+    package: null
+    level: column
+    required: []
+    optional: []
+  accepted_values:
+    package: null
+    level: column
+    required: [values]
+    optional: [quote]
+  relationships:
+    package: null
+    level: column
+    required: [to, field]
+    optional: []
+  accepted_range:
+    package: dbt_utils
+    level: column
+    required: []
+    optional: [min_value, max_value, inclusive]
+    note: al menos min_value o max_value
+  at_least_one:
+    package: dbt_utils
+    level: column
+    required: []
+    optional: [group_by_columns]
+  not_empty_string:
+    package: dbt_utils
+    level: column
+    required: []
+    optional: [trim_whitespace]
+  recency:
+    package: dbt_utils
+    level: model
+    required: [field, datepart, interval]
+    optional: [ignore_time_component, group_by_columns]
+  unique_combination_of_columns:
+    package: dbt_utils
+    level: model
+    required: [combination_of_columns]
+    optional: [quote_columns]
+  expression_is_true:
+    package: dbt_utils
+    level: model
+    required: [expression]
+    optional: []
+  expect_column_values_to_be_between:
+    package: dbt_expectations
+    level: column
+    required: []
+    optional: [min_value, max_value, row_condition, strictly]
+  expect_column_values_to_be_within_n_stdevs:
+    package: dbt_expectations
+    level: column
+    required: []
+    optional: [group_by, sigma_threshold]
+  expect_column_values_to_be_within_n_moving_stdevs:
+    package: dbt_expectations
+    level: column
+    required: [date_column_name]
+    optional: [group_by, period, lookback_periods, trend_periods, test_periods, sigma_threshold]
+  expect_column_mean_to_be_between:
+    package: dbt_expectations
+    level: column
+    required: []
+    optional: [min_value, max_value, group_by, row_condition, strictly]
+  expect_row_values_to_have_recent_data:
+    package: dbt_expectations
+    level: column
+    required: [datepart, interval]
+    optional: [row_condition]

@@ -1,0 +1,136 @@
+"""Interfaz Streamlit del agente. Ejecutar: streamlit run src/ui/app.py"""
+
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+import streamlit as st  # noqa: E402
+
+from src.agents.runner import AgentSession  # noqa: E402
+from src.tools.common import ToolError  # noqa: E402
+from src.tools.info_proyecto import info_proyecto  # noqa: E402
+from src.ui import deps  # noqa: E402
+
+st.set_page_config(page_title="dbt Test Agent", page_icon=None, layout="wide")
+
+
+@st.cache_resource
+def _graph():
+    return deps.load_graph()
+
+
+def _reset() -> None:
+    for key in ("session", "turn", "history", "trace"):
+        st.session_state.pop(key, None)
+
+
+def _say(role: str, text: str) -> None:
+    st.session_state.history.append((role, text))
+
+
+def _apply(turn: dict) -> None:
+    """Guarda el turno y refleja en el chat lo que el agente dice."""
+    st.session_state.turn = turn
+    st.session_state.trace = st.session_state.get("trace", []) + turn.get("trace", [])
+    if turn["estado"] == "pregunta":
+        _say("assistant", turn["payload"]["mensaje"])
+    elif turn["estado"] != "aprobacion":
+        _say("assistant", turn["mensaje"])
+
+
+def _run(action) -> None:
+    try:
+        with st.spinner("Trabajando..."):
+            _apply(action())
+    except ToolError as exc:
+        _say("assistant", f"Error de configuración ({exc.code}): {exc.message}")
+        st.session_state.turn = {"estado": "error"}
+    except Exception as exc:  # noqa: BLE001 - frontera de la UI
+        _say("assistant", f"Error inesperado: {type(exc).__name__}: {str(exc)[:300]}")
+        st.session_state.turn = {"estado": "error"}
+
+
+def _approval_card(payload: dict, session: AgentSession) -> None:
+    target = f"{payload['modelo']}.{payload['columna']}" if payload.get("columna") else payload["modelo"]
+    st.subheader("Revisión humana")
+    st.write(f"**Test:** `{payload['test']}` en `{target}`  |  **Archivo:** `{payload['schema_path']}`  |  **Complejidad:** {payload['complejidad']}")
+    validation = payload["validacion"]
+    if validation["valido"]:
+        st.success("Validación OK (sintaxis, estructura y dbt parse offline).")
+    else:
+        st.error(f"Validación fallida ({validation.get('codigo')}): {validation.get('mensaje')}")
+    for warning in payload.get("advertencias", []) + validation.get("advertencias", []):
+        st.warning(warning)
+    st.code(payload["diff"], language="diff")
+    cols = st.columns(2)
+    if cols[0].button("Aprobar y abrir PR", type="primary", key="aprobar", disabled=not validation["valido"]):
+        _say("user", "Aprobado.")
+        _run(lambda: session.resume({"accion": "aprobar"}))
+        st.rerun()
+    with st.expander("Editar el YAML"):
+        edited = st.text_area("schema.yml", payload["yaml_nuevo"], height=300, key="yaml_edit")
+        if st.button("Enviar edición", key="editar"):
+            _say("user", "Edité el YAML.")
+            _run(lambda: session.resume({"accion": "editar", "contenido_yaml": edited}))
+            st.rerun()
+    reason = st.text_input("Motivo del rechazo (opcional)", key="motivo")
+    if cols[1].button("Rechazar", key="rechazar"):
+        _say("user", "Rechazado.")
+        _run(lambda: session.resume({"accion": "rechazar", "motivo": reason or None}))
+        st.rerun()
+
+
+def main() -> None:
+    st.title("dbt Test Agent")
+    st.caption("Pedí un test en lenguaje natural; el agente lo propone, vos lo aprobás y se abre la PR.")
+    st.session_state.setdefault("history", [])
+
+    with st.sidebar:
+        if st.button("Nueva conversación"):
+            _reset()
+            st.rerun()
+        info = info_proyecto()
+        if info["ok"]:
+            data = info["data"]
+            st.write(f"dbt {data['dbt_version']} | `{data['tests_key']}`")
+            st.write("Paquetes: " + ", ".join(data["packages"]))
+            for warning in data["warnings"]:
+                st.warning(warning)
+        else:
+            st.error(info["error"]["message"])
+        with st.expander("Trazabilidad"):
+            st.dataframe(st.session_state.get("trace", []), use_container_width=True)
+
+    for role, text in st.session_state.history:
+        with st.chat_message(role):
+            st.markdown(text)
+
+    turn = st.session_state.get("turn")
+    session: AgentSession | None = st.session_state.get("session")
+    if turn and turn["estado"] == "aprobacion" and session:
+        _approval_card(turn["payload"], session)
+        return
+    if turn and turn["estado"] == "completado" and turn.get("pr"):
+        st.success(f"PR creada: {turn['pr']['url']}")
+
+    waiting = turn is not None and turn["estado"] == "pregunta"
+    prompt = st.chat_input("Respondé al agente..." if waiting else "Ej.: agregá un test que valide que subtotal en stg_orders sea > 0 y < 100000")
+    if not prompt:
+        return
+    _say("user", prompt)
+    if waiting and session:
+        _run(lambda: session.resume(prompt))
+    else:
+        try:
+            st.session_state.session = session = AgentSession(_graph())
+        except ToolError as exc:
+            _say("assistant", f"Configuración incompleta ({exc.code}): {exc.message}")
+            st.rerun()
+        _run(lambda: session.send(prompt))
+    st.rerun()
+
+
+main()

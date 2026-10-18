@@ -1,0 +1,12 @@
+# Profile dummy: solo para `dbt parse` sin conexión. Sin credenciales reales.
+default:
+  target: databricks
+  outputs:
+    databricks:
+      type: databricks
+      host: "{{ env_var('DBT_DUMMY_HOST', 'dummy.cloud.databricks.com') }}"
+      http_path: "{{ env_var('DBT_DUMMY_HTTP_PATH', '/sql/1.0/warehouses/dummy') }}"
+      token: "{{ env_var('DBT_DUMMY_TOKEN', 'dummy-token') }}"
+      catalog: dummy
+      schema: dummy
+      threads: 1
