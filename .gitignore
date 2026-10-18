@@ -8,3 +8,22 @@ __pycache__/
 .agents/
 .notebooks/
 .github
+
+# Secretos y entorno
+.env
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Persistencia local
+*.db
+*.sqlite
+data/
+
+# dbt (target/ se versiona a propósito: ver README)
+dbt/logs/
+dbt/dbt_packages/
+logs/
+
+.DS_Store
