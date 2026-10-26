@@ -21,10 +21,12 @@ from src.tools.skills import listar_skills
 from src.tools.dbt.validar_yaml import validar_yaml
 from src.tools.dbt.yaml_edit import unified_diff
 
+from .message_content import content_to_text
 from .tools import build_tools, llm_view
 
 MAX_STEPS = 14
 MAX_RETRIES = 2
+MAX_BASE_REFRESHES = 2
 
 SYSTEM_PROMPT = """Sos un agente que traduce pedidos en lenguaje natural a tests de dbt y prepara una Pull Request.
 Respondé siempre en español, breve y claro.
@@ -57,6 +59,7 @@ class AgentState(TypedDict, total=False):
     pr: dict[str, Any] | None
     status: str
     retries: int
+    base_refreshes: int
     steps: int
     trace: Annotated[list[dict[str, Any]], operator.add]
 
@@ -157,7 +160,7 @@ def build_graph(
         return "review"
 
     def ask_user(state: AgentState) -> dict[str, Any]:
-        answer = interrupt({"tipo": "pregunta", "mensaje": str(state["messages"][-1].content)})
+        answer = interrupt({"tipo": "pregunta", "mensaje": content_to_text(state["messages"][-1].content)})
         text = answer if isinstance(answer, str) else json.dumps(answer, ensure_ascii=False)
         return {"messages": [HumanMessage(text)]}
 
@@ -192,6 +195,9 @@ def build_graph(
     def route_review(state: AgentState) -> Literal["create_pr", "apply_edit", "reject", "review"]:
         return {"aprobar": "create_pr", "editar": "apply_edit", "rechazar": "reject"}.get(state["decision"]["accion"], "review")
 
+    def route_create_pr(state: AgentState) -> Literal["validate", "__end__"]:
+        return "validate" if state.get("proposal") and state.get("validation") is None else END
+
     def apply_edit(state: AgentState) -> dict[str, Any]:
         proposal = dict(state["proposal"])
         proposal["yaml_nuevo"] = state["decision"]["contenido_yaml"]
@@ -217,6 +223,28 @@ def build_graph(
         trace = [_entry("create_pr", "crear_pr", res["ok"], started, (res["error"] or {}).get("code"))]
         if res["ok"]:
             data = res["data"]
+            if data.get("necesita_revision"):
+                refreshes = state.get("base_refreshes", 0) + 1
+                if refreshes > MAX_BASE_REFRESHES:
+                    text = "La rama base volvió a cambiar varias veces. No se creó la PR; iniciá una nueva propuesta sobre la versión actual."
+                    return {"messages": [AIMessage(text)], "status": "error_pr", "base_refreshes": refreshes, "trace": trace}
+                proposal = dict(proposal)
+                proposal["yaml_original"] = data["contenido_base_actual"]
+                proposal["yaml_nuevo"] = data["contenido_fusionado"]
+                proposal["diff"] = unified_diff(
+                    proposal["yaml_original"], proposal["yaml_nuevo"], proposal["schema_path"]
+                )
+                proposal["advertencias"] = [
+                    *proposal.get("advertencias", []),
+                    "La rama base cambió después de la primera revisión. Se fusionaron cambios no conflictivos; revisa y aprueba nuevamente el diff actualizado.",
+                ]
+                return {
+                    "proposal": proposal,
+                    "validation": None,
+                    "decision": None,
+                    "base_refreshes": refreshes,
+                    "trace": trace,
+                }
             text = f"PR creada: {data['url']} (rama `{data['rama']}`)."
             return {"messages": [AIMessage(text)], "pr": data, "status": "pr_creada", "trace": trace}
         error = res["error"]
@@ -236,5 +264,5 @@ def build_graph(
     graph.add_conditional_edges("review", route_review, ["create_pr", "apply_edit", "reject", "review"])
     graph.add_edge("apply_edit", "validate")
     graph.add_edge("reject", END)
-    graph.add_edge("create_pr", END)
+    graph.add_conditional_edges("create_pr", route_create_pr, ["validate", END])
     return graph.compile(checkpointer=checkpointer)

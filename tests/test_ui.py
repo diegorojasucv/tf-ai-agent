@@ -2,6 +2,7 @@ from pathlib import Path
 
 import pytest
 import streamlit as st
+from langchain_core.messages import AIMessage
 from streamlit.testing.v1 import AppTest
 
 from src.agents.graph import build_graph
@@ -45,6 +46,39 @@ def test_ui_rechazo(app) -> None:
     at.chat_input[0].set_value("x").run()
     at.button(key="rechazar").click().run()
     assert gh.calls == [] and any("rechazado" in m.markdown[0].value.lower() for m in at.chat_message if m.markdown)
+
+
+def test_ui_muestra_solo_texto_de_bloque_llm(manifest_path: Path, project_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    message = "La columna `product_id` aparece en varios modelos. ¿En cuál quieres agregar el test `unique`?"
+    llm = ScriptedLLM([
+        AIMessage(content=[{
+            "type": "text",
+            "text": message,
+            "extras": {"signature": "provider-private-signature"},
+        }])
+    ])
+    graph = build_graph(
+        llm,
+        github_client=FakeGitHub(""),
+        checkpointer=get_checkpointer(tmp_path / "ui-content.db"),
+        manifest_path=manifest_path,
+        project_dir=project_dir,
+        repo="o/r",
+        base="main",
+    )
+    monkeypatch.setattr(deps, "load_graph", lambda: graph)
+    st.cache_resource.clear()
+    at = AppTest.from_file(APP, default_timeout=30).run()
+    at.chat_input[0].set_value("Agrega unique a product_id").run()
+
+    rendered = "\n".join(
+        element.value
+        for chat in at.chat_message
+        for element in chat.markdown
+    )
+    assert message in rendered
+    assert "provider-private-signature" not in rendered
+    assert "{'type': 'text'" not in rendered
 
 
 def test_ui_config_incompleta_muestra_mensaje(monkeypatch: pytest.MonkeyPatch) -> None:

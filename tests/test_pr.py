@@ -50,6 +50,18 @@ def test_base_cambiada_aborta_antes_de_crear_rama() -> None:
     assert [c[0] for c in gh.calls] == ["get_file_contents"]
 
 
+def test_base_cambiada_sin_conflicto_pide_revision_del_merge() -> None:
+    remote = "version: 2\n" + ORIGINAL
+    gh = FakeGitHub(base_content=remote)
+    res = _pr(gh)
+    assert res["ok"]
+    assert res["data"]["necesita_revision"] is True
+    assert res["data"]["contenido_base_actual"] == remote
+    assert "version: 2" in res["data"]["contenido_fusionado"]
+    assert "data_tests:" in res["data"]["contenido_fusionado"]
+    assert [c[0] for c in gh.calls] == ["get_file_contents"]
+
+
 @pytest.mark.parametrize("tool", ["get_file_contents", "create_branch", "push_files", "create_pull_request"])
 def test_error_en_cada_paso_es_estructurado(tool: str) -> None:
     res = _pr(FakeGitHub(fail_on=tool))

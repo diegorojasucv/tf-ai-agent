@@ -5,6 +5,9 @@ from __future__ import annotations
 import asyncio
 import os
 import re
+import shutil
+import subprocess
+import tempfile
 import threading
 import uuid
 from pathlib import Path, PurePosixPath
@@ -87,6 +90,46 @@ def _normalize(text: str) -> str:
     return "\n".join(line.rstrip() for line in text.replace("\r\n", "\n").strip().splitlines())
 
 
+def _github_file_text(response: str) -> str:
+    """Quita el encabezado descriptivo que devuelve get_file_contents, si está presente."""
+    return re.sub(
+        r"\A(?:successfully downloaded text file \(SHA: [^)]+\)|downloaded text file \(SHA: [^)]+\))\s*\n",
+        "",
+        response,
+        count=1,
+        flags=re.IGNORECASE,
+    )
+
+
+def _merge_yaml(base: str, proposed: str, current: str) -> str | None:
+    """Fusiona la propuesta con la versión actual de base; devuelve None ante conflictos."""
+    git = shutil.which("git")
+    if not git:
+        return None
+    with tempfile.TemporaryDirectory(prefix="dbt-pr-merge-") as directory:
+        root = Path(directory)
+        proposed_path, base_path, current_path = (
+            root / name for name in ("proposed.yml", "base.yml", "current.yml")
+        )
+        proposed_path.write_text(proposed, encoding="utf-8")
+        base_path.write_text(base, encoding="utf-8")
+        current_path.write_text(current, encoding="utf-8")
+        try:
+            result = subprocess.run(
+                [
+                    git, "merge-file", "--stdout", "-L", "propuesta", "-L", "base", "-L", "main",
+                    str(proposed_path), str(base_path), str(current_path),
+                ],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            return None
+    return result.stdout if result.returncode == 0 else None
+
+
 def crear_pr(
     ruta_repo: str,
     contenido_original: str,
@@ -100,7 +143,7 @@ def crear_pr(
     repo: str | None = None,
     base: str | None = None,
 ) -> dict[str, Any]:
-    """Rama nueva -> commit del YAML -> PR hacia la base. Aborta si el archivo cambió en la base."""
+    """Abre una PR; si cambió la base, fusiona sin conflictos y solicita nueva aprobación."""
 
     def handler(args: CrearPrInput) -> dict[str, Any]:
         slug = repo or os.environ.get("GITHUB_REPO", "")
@@ -124,12 +167,23 @@ def crear_pr(
                     detail = detail.replace(secret, "***")
                 raise ToolError(code, f"Falló '{tool}': {type(exc).__name__}: {detail}") from exc
 
-        current = step("BASE_READ_FAILED", "get_file_contents", {"path": args.ruta_repo, "ref": base_branch})
-        if _normalize(args.contenido_original) not in _normalize(current):
-            raise ToolError(
-                "BASE_CHANGED",
-                f"{args.ruta_repo} en '{base_branch}' difiere de la versión local; sincronizá antes de abrir la PR.",
-            )
+        current = _github_file_text(
+            step("BASE_READ_FAILED", "get_file_contents", {"path": args.ruta_repo, "ref": base_branch})
+        )
+        if _normalize(args.contenido_original) != _normalize(current):
+            merged = _merge_yaml(args.contenido_original, args.contenido_nuevo, current)
+            if merged is None:
+                raise ToolError(
+                    "BASE_CHANGED",
+                    f"{args.ruta_repo} cambió en '{base_branch}' y no se pudo fusionar automáticamente "
+                    "(conflicto o git no disponible). Actualizá la propuesta y volvé a revisarla.",
+                )
+            return {
+                "necesita_revision": True,
+                "contenido_base_actual": current,
+                "contenido_fusionado": merged,
+                "mensaje": "La base cambió. Se integraron cambios no conflictivos; el YAML fusionado requiere validación y nueva aprobación.",
+            }
         step("BRANCH_FAILED", "create_branch", {"branch": branch, "from_branch": base_branch})
         step(
             "PUSH_FAILED",

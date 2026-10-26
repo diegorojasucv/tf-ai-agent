@@ -175,6 +175,34 @@ def test_base_cambiada_no_crea_pr(env, project_dir: Path) -> None:
     assert [c[0] for c in gh.calls] == ["get_file_contents"]
 
 
+def test_base_cambiada_fusiona_valida_y_pide_aprobacion_nueva(env, project_dir: Path) -> None:
+    local = (project_dir / "models/staging/stg_orders.yml").read_text()
+    remote = local.replace(
+        "description: Order data with basic cleaning and transformation applied, one row per order.",
+        "description: Updated upstream description.",
+    )
+    gh = FakeGitHub(remote)
+    _, _, graph = env([call("generar_test", **GENERAR)], gh=gh, db="rebase.db")
+    session = AgentSession(graph, "t-rebase")
+
+    first = session.send("agrega el test")
+    assert first["estado"] == "aprobacion"
+    revised = session.resume({"accion": "aprobar"})
+    assert revised["estado"] == "aprobacion"
+    assert "Updated upstream description." in revised["payload"]["yaml_nuevo"]
+    assert "accepted_range" in revised["payload"]["yaml_nuevo"]
+    assert revised["payload"]["validacion"]["valido"] is True
+    assert any("apru" in warning for warning in revised["payload"]["advertencias"])
+    assert [c[0] for c in gh.calls] == ["get_file_contents"]
+
+    done = session.resume({"accion": "aprobar"})
+    assert done["estado"] == "completado"
+    assert [c[0] for c in gh.calls] == [
+        "get_file_contents", "get_file_contents", "create_branch", "push_files", "create_pull_request"
+    ]
+    assert gh.calls[3][1]["files"][0]["content"] == revised["payload"]["yaml_nuevo"]
+
+
 def test_persistencia_reanuda_tras_reconstruir_el_grafo(env) -> None:
     _, _, graph = env([call("generar_test", **GENERAR)], db="persist.db")
     AgentSession(graph, "t11").send("x")
