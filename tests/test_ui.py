@@ -140,6 +140,8 @@ def test_ui_detalle_de_trazas_abre_vista_por_thread_id(
 
     assert not at.exception
     assert any(title.value == "Detalle de trazabilidad" for title in at.title)
+    assert any("cierra esta pestaña" in item.value.lower() for item in at.caption)
+    assert not any(button.label == "Volver al agente" for button in at.button)
     assert any("buscar_columna" in exp.label for exp in at.expander)
     rendered = " ".join(element.value for element in at.json)
     assert "product_id" in rendered and "products" in rendered

@@ -3,7 +3,7 @@ from typing import Any
 import pytest
 
 from src.tools.common import ToolError
-from src.tools.github.pr import crear_pr, repo_path_for
+from src.tools.github.pr import _github_file_text, _mcp_result_text, crear_pr, repo_path_for
 
 ORIGINAL = "models:\n  - name: orders\n"
 NEW = ORIGINAL + "    data_tests:\n      - not_null\n"
@@ -41,6 +41,37 @@ def test_flujo_feliz_orden_y_nunca_escribe_en_base() -> None:
     assert branch.startswith("dbt-test-agent/") and branch != "main"
     assert gh.calls[2][1]["branch"] == branch and gh.calls[2][1]["files"][0]["content"] == NEW
     assert gh.calls[3][1]["base"] == "main" and gh.calls[3][1]["head"] == branch
+
+
+def test_mcp_result_text_extrae_bloques_de_texto_y_quita_representacion_python() -> None:
+    response = repr([
+        {"type": "text", "text": "successfully downloaded text file (SHA: abc)"},
+        {"type": "text", "text": ORIGINAL},
+    ])
+    text = _mcp_result_text(response)
+    assert text == f"successfully downloaded text file (SHA: abc)\n{ORIGINAL}"
+    assert _github_file_text(text) == ORIGINAL
+
+
+def test_mcp_result_text_acepta_lista_de_bloques() -> None:
+    assert _mcp_result_text([{"type": "text", "text": "contenido"}]) == "contenido"
+
+
+def test_mcp_file_blocks_no_producen_base_changed_falso() -> None:
+    class McpShapeGitHub(FakeGitHub):
+        def call(self, tool: str, args: dict[str, Any]) -> str:
+            if tool == "get_file_contents":
+                    return _mcp_result_text(repr([
+                    {"type": "text", "text": "successfully downloaded text file (SHA: abc)"},
+                    {"type": "text", "text": ORIGINAL},
+                    ]))
+            return super().call(tool, args)
+
+    gh = McpShapeGitHub()
+    result = _pr(gh)
+    assert result["ok"], result
+    assert result["data"]["url"].endswith("/pull/7")
+    assert [call[0] for call in gh.calls] == ["create_branch", "push_files", "create_pull_request"]
 
 
 def test_base_cambiada_aborta_antes_de_crear_rama() -> None:

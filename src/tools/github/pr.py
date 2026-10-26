@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import ast
 import os
 import re
 import shutil
@@ -25,6 +26,30 @@ _REPO = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 
 class GitHubClient(Protocol):
     def call(self, tool: str, args: dict[str, Any]) -> str: ...
+
+
+def _mcp_result_text(value: Any) -> str:
+    """Convierte contenido MCP/LangChain a texto, sin la representación Python de bloques."""
+    if isinstance(value, str):
+        stripped = value.strip()
+        if stripped.startswith(("[{", "{")):
+            try:
+                parsed = ast.literal_eval(stripped)
+            except (SyntaxError, ValueError):
+                return value
+            if parsed is not value:
+                return _mcp_result_text(parsed)
+        return value
+    if isinstance(value, dict):
+        text = value.get("text")
+        if isinstance(text, str):
+            return text
+        content = value.get("content")
+        return _mcp_result_text(content) if content is not None else str(value)
+    if isinstance(value, (list, tuple)):
+        parts = [_mcp_result_text(item) for item in value]
+        return "\n".join(part for part in parts if part)
+    return str(value)
 
 
 class MCPGitHubClient:
@@ -50,7 +75,7 @@ class MCPGitHubClient:
             self._tools = {t.name: t for t in self._run(get_github_tools())}
         if tool not in self._tools:
             raise ToolError("MCP_TOOL_MISSING", f"El servidor MCP no expone la tool '{tool}'.")
-        return str(self._run(self._tools[tool].ainvoke(args)))
+        return _mcp_result_text(self._run(self._tools[tool].ainvoke(args)))
 
 
 class CrearPrInput(BaseModel):

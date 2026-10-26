@@ -98,7 +98,7 @@ def _approval_card(payload: dict, session: AgentSession) -> None:
 def _trace_detail(thread_id: str) -> None:
     st.title("Detalle de trazabilidad")
     st.caption("Entradas y salidas persistidas por invocación. Los valores sensibles conocidos se redactan.")
-    st.link_button("Volver al agente", "?", icon=":material/arrow_back:")
+    st.caption("Para volver a tu conversación, cierra esta pestaña de detalle.")
     try:
         events = get_trace_events(thread_id)
     except Exception as exc:  # noqa: BLE001 - errores de lectura de observabilidad
