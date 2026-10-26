@@ -30,11 +30,11 @@ flowchart TD
 | Componente | Dónde | Rol |
 |---|---|---|
 | LLM | `src/agents/llm.py` | Gemini por defecto, OpenAI opcional; `temperature=0` |
-| Tools de lectura | `src/tools/{info_proyecto,listar_modelos,buscar_columna,leer_modelo}.py` | Exploración del proyecto desde el manifest |
+| Tools de lectura | `src/tools/dbt/{info_proyecto,listar_modelos,buscar_columna,leer_modelo}.py` | Exploración del proyecto desde el manifest |
 | Skill | `src/skills/dbt-testing/` | Procedimiento, catálogo de tests permitidos y sintaxis; se carga con `cargar_skill` en tres niveles |
-| Generación | `src/tools/generar_test.py`, `yaml_edit.py` | YAML nuevo y diff con `ruamel.yaml`; no escribe archivos |
-| Validación | `src/tools/validar_yaml.py` | Sintaxis, estructura y `dbt parse` offline en copia temporal |
-| PR | `src/tools/pr.py`, `github_mcp.py` | Rama, commit y PR por MCP; verifica la base y nunca escribe en `main` |
+| Generación | `src/tools/dbt/generar_test.py`, `src/tools/dbt/yaml_edit.py` | YAML nuevo y diff con `ruamel.yaml`; no escribe archivos |
+| Validación | `src/tools/dbt/validar_yaml.py` | Sintaxis, estructura y `dbt parse` offline en copia temporal |
+| PR | `src/tools/github/pr.py`, `src/tools/github/github_mcp.py` | Rama, commit y PR por MCP; verifica la base y nunca escribe en `main` |
 | Estado | `src/memory/checkpointer.py` | `SqliteSaver`; cada conversación es un `thread_id` reanudable |
 | Interfaz | `src/ui/app.py` | Chat, tarjeta de aprobación con diff, trazabilidad |
 

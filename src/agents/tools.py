@@ -9,11 +9,11 @@ from typing import Any, Callable
 from langchain_core.tools import BaseTool, StructuredTool
 from pydantic import BaseModel, Field
 
-from src.tools.buscar_columna import buscar_columna
-from src.tools.generar_test import generar_test
-from src.tools.info_proyecto import info_proyecto
-from src.tools.leer_modelo import leer_modelo
-from src.tools.listar_modelos import listar_modelos
+from src.tools.dbt.buscar_columna import buscar_columna
+from src.tools.dbt.generar_test import generar_test
+from src.tools.dbt.info_proyecto import info_proyecto
+from src.tools.dbt.leer_modelo import leer_modelo
+from src.tools.dbt.listar_modelos import listar_modelos
 from src.tools.skills import cargar_skill
 
 # Campos voluminosos que el LLM no necesita ver; el grafo conserva el resultado completo.
@@ -82,12 +82,12 @@ def build_tools(
     return {
         t.name: t
         for t in [
-            make("info_proyecto", lambda: info_proyecto(**with_dir),
-                 "Versión de dbt, clave de tests, paquetes instalados y frescura del manifest.", _NoArgs),
+              make("info_proyecto", lambda: info_proyecto(**paths),
+                  "Versión de dbt, clave de tests, paquetes instalados y fecha de generación del manifest.", _NoArgs),
             make("listar_modelos", lambda filtro_opcional=None: listar_modelos(filtro_opcional, **paths),
                  "Lista modelos y sources del proyecto, con filtro opcional por nombre.", _Listar),
             make("buscar_columna", lambda nombre_columna, tabla_opcional=None: buscar_columna(nombre_columna, tabla_opcional, **paths),
-                 "Busca una columna; indica si es 'documentada' o 'solo_en_sql' y si aparece en varios modelos (ambigua).", _Buscar),
+                  "Busca una columna declarada en la metadata del manifest y señala si aparece en varios modelos (ambigua). No consulta SQL.", _Buscar),
             make("leer_modelo", lambda modelo: leer_modelo(modelo, **with_dir),
                  "Columnas, tests existentes y ruta del schema.yml de un modelo.", _Leer),
             make("cargar_skill", lambda nombre, recurso_opcional=None: cargar_skill(nombre, recurso_opcional),

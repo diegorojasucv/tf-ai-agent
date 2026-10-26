@@ -1,8 +1,8 @@
-# dbt Test Agent
+# Data Quality Agent
 
 ## 1. Nombre del proyecto
 
-**dbt Test Agent**: agente que traduce pedidos en lenguaje natural a tests de dbt y abre una Pull Request en GitHub.
+**Data Quality Agent**: agente que traduce pedidos en lenguaje natural a tests de dbt y abre una Pull Request en GitHub.
 
 ## 2. Integrantes
 
@@ -51,12 +51,12 @@ flowchart LR
 ```
 
 - **LLM:** Gemini por defecto, OpenAI opcional (`LLM_PROVIDER`).
-- **Tools:** `src/tools/` (lectura, generación, validación, PR). Todas devuelven `{ok, data, error}`.
+- **Tools:** `src/tools/dbt/` (metadata, lectura, generación y validación), `src/tools/github/` (MCP y PR), más `src/tools/common.py` y `src/tools/skills.py`. Las tools devuelven `{ok, data, error}`.
 - **Skill:** `src/skills/dbt-testing/` (`SKILL.md` + catálogo de tests + sintaxis), cargada como tool en 3 niveles.
 - **Estado/memoria:** checkpointer SQLite (`SQLITE_PATH`); cada conversación es un `thread_id` reanudable.
 - **HITL:** `interrupt()` en `ask_user` (preguntas) y `review` (aprobación).
 - **Integración externa:** GitHub MCP (`get_file_contents`, `create_branch`, `push_files`, `create_pull_request`).
-- **Trazabilidad:** cada paso registra herramienta, éxito, código de error y latencia (`trace` en el estado).
+- **Trazabilidad:** el resumen por paso se conserva en el estado (`trace`) y el detalle de entradas/salidas se persiste en `tool_traces` dentro del SQLite configurado por `SQLITE_PATH`. El panel incluye un enlace que abre el detalle cronológico en otra pestaña; las claves sensibles conocidas se redactan.
 
 ## 7. Decisiones técnicas
 
@@ -69,7 +69,7 @@ flowchart LR
 - **Aprobación humana obligatoria** antes de cualquier PR, con diff y resultado de validación.
 - **`push_files`** (un solo commit, sin `sha`) en vez de `create_or_update_file`; antes de subir se verifica que el archivo en la base no cambió.
 - **Persistencia:** SQLite con `SqliteSaver`; permite reanudar tras reiniciar.
-- **Modelo:** Gemini por defecto (`gemini-2.5-flash`), OpenAI soportado; ambos con `temperature=0`.
+- **Modelo:** Gemini por defecto (`gemini-3.1-flash-lite`) u OpenAI (`gpt-4o-mini`) mediante `LLM_PROVIDER`; ambos con `temperature=0`. Las claves específicas son `GEMINI_API_KEY` y `OPENAI_API_KEY`; `LLM_API_KEY` se mantiene como fallback genérico.
 
 ## 8. Instalación
 
@@ -89,7 +89,7 @@ cp .env.example .env   # completar GITHUB_TOKEN, GITHUB_REPO, LLM_*
 
 | Variable | Descripción |
 |---|---|
-| `LLM_PROVIDER`, `LLM_MODEL`, `LLM_API_KEY` | LLM configurable |
+| `LLM_PROVIDER`, `LLM_MODEL`, `GEMINI_API_KEY`, `OPENAI_API_KEY`, `LLM_API_KEY` | LLM configurable; `LLM_API_KEY` es fallback genérico |
 | `GITHUB_TOKEN` | Token fine-grained, un solo repo, permisos mínimos (contenido y PRs) |
 | `GITHUB_REPO` | `owner/repo` destino de las PRs |
 | `BASE_BRANCH` | Rama base (`main`) |
@@ -155,7 +155,7 @@ TODO: ejecutar la evaluación con el LLM real y pegar aquí la tabla de resultad
 - `generar_test` cubre 15 tests del catálogo; ampliar es editar `test-catalog.yml`.
 - `ruamel.yaml` puede reformatear mapas en una línea de archivos existentes; el diff lo muestra antes de la PR.
 - La verificación de la base asume que `get_file_contents` devuelve el texto del archivo; confirmar con el servidor real.
-- `buscar_columna` extrae columnas del SQL de forma best-effort (sin parser SQL completo).
-- El manifest debe regenerarse tras cambios en el proyecto (`info_proyecto` avisa si está desactualizado).
+- `buscar_columna` busca columnas declaradas en la metadata del manifest; no inspecciona SQL.
+- Se asume que el manifest local está actualizado y se regenera fuera del agente cuando corresponde.
 - No se mide costo/tokens en la evaluación.
 - Docker verificado construyendo la imagen y levantando la UI; la corrida completa con LLM y GitHub reales depende de tus credenciales.

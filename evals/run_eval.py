@@ -15,7 +15,7 @@ from src.agents.graph import build_graph
 from src.agents.llm import DEFAULT_MODELS, get_llm
 from src.memory.checkpointer import get_checkpointer
 from src.tools.common import ToolError
-from src.tools.manifest import load_manifest
+from src.tools.dbt.manifest import load_manifest
 from src.tools.common import default_manifest_path
 
 RESULTS = Path(__file__).parent / "resultados"
@@ -55,7 +55,10 @@ def main() -> int:
     saver = get_checkpointer(db)
 
     def make_graph(github: RecordingGitHub):
-        return build_graph(llm, github_client=github, checkpointer=saver, repo="eval/eval", base="main")
+        return build_graph(
+            llm, github_client=github, checkpointer=saver, trace_db_path=db,
+            repo="eval/eval", base="main",
+        )
 
     results = run_all(casos, make_graph)
     summary = summarize(results)

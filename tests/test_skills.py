@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 from src.tools.common import default_manifest_path
-from src.tools.manifest import load_manifest
+from src.tools.dbt.manifest import load_manifest
 from src.tools.skills import cargar_skill, listar_skills, load_test_catalog
 
 

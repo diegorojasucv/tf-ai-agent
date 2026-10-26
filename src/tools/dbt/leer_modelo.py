@@ -7,7 +7,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from .common import default_manifest_path, default_project_dir, run_tool
+from ..common import default_manifest_path, default_project_dir, run_tool
 from .manifest import load_manifest
 
 

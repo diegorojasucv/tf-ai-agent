@@ -7,7 +7,8 @@ from langchain_core.messages import AIMessage
 from src.agents.graph import build_graph
 from src.agents.runner import AgentSession
 from src.memory.checkpointer import get_checkpointer
-from src.tools import validar_yaml as validar_mod
+from src.memory.trace_store import get_trace_events
+from src.tools.dbt import validar_yaml as validar_mod
 from src.tools.common import ToolError
 
 
@@ -59,8 +60,9 @@ def env(manifest_path: Path, project_dir: Path, tmp_path: Path):
     def make(script: list[AIMessage], gh: FakeGitHub | None = None, db: str = "agent.db"):
         llm = ScriptedLLM(script)
         gh = gh or FakeGitHub(base)
+        database = tmp_path / db
         graph = build_graph(
-            llm, github_client=gh, checkpointer=get_checkpointer(tmp_path / db),
+            llm, github_client=gh, checkpointer=get_checkpointer(database), trace_db_path=database,
             manifest_path=manifest_path, project_dir=project_dir, repo="o/r", base="main",
         )
         return llm, gh, graph
@@ -87,6 +89,22 @@ def test_recorrido_principal_con_aprobacion_y_pr(env) -> None:
     assert pushed["content"] == payload["yaml_nuevo"] and gh.calls[2][1]["branch"] != "main"
     tools_used = [t["herramienta"] for t in done["trace"] if t["nodo"] in {"tools", "validate", "create_pr"}]
     assert tools_used == ["cargar_skill", "buscar_columna", "generar_test", "validar_yaml", "crear_pr"]
+
+
+def test_guarda_entradas_y_salidas_completas_de_las_tools(env, tmp_path: Path) -> None:
+    _, _, graph = env([call("generar_test", **GENERAR)], db="tool-traces.db")
+    turn = AgentSession(graph, "t-traces").send("agrega rango")
+
+    assert turn["estado"] == "aprobacion"
+    events = get_trace_events("t-traces", tmp_path / "tool-traces.db")
+    tool_event = next(event for event in events if event["name"] == "generar_test")
+    validation_event = next(event for event in events if event["name"] == "validar_yaml")
+    assert tool_event["input"]["modelo"] == "stg_orders"
+    assert tool_event["input"]["columna"] == "subtotal"
+    assert tool_event["output"]["data"]["test"] == "dbt_utils.accepted_range"
+    assert "yaml_nuevo" in tool_event["output"]["data"]
+    assert validation_event["input"]["schema_path"] == "models/staging/stg_orders.yml"
+    assert validation_event["output"]["data"]["valido"] is True
 
 
 def test_pregunta_al_usuario_y_continua(env) -> None:
@@ -173,6 +191,34 @@ def test_base_cambiada_no_crea_pr(env, project_dir: Path) -> None:
     done = session.resume({"accion": "aprobar"})
     assert done["estado"] == "error" and "BASE_CHANGED" in done["mensaje"]
     assert [c[0] for c in gh.calls] == ["get_file_contents"]
+
+
+def test_base_cambiada_fusiona_valida_y_pide_aprobacion_nueva(env, project_dir: Path) -> None:
+    local = (project_dir / "models/staging/stg_orders.yml").read_text()
+    remote = local.replace(
+        "description: Order data with basic cleaning and transformation applied, one row per order.",
+        "description: Updated upstream description.",
+    )
+    gh = FakeGitHub(remote)
+    _, _, graph = env([call("generar_test", **GENERAR)], gh=gh, db="rebase.db")
+    session = AgentSession(graph, "t-rebase")
+
+    first = session.send("agrega el test")
+    assert first["estado"] == "aprobacion"
+    revised = session.resume({"accion": "aprobar"})
+    assert revised["estado"] == "aprobacion"
+    assert "Updated upstream description." in revised["payload"]["yaml_nuevo"]
+    assert "accepted_range" in revised["payload"]["yaml_nuevo"]
+    assert revised["payload"]["validacion"]["valido"] is True
+    assert any("apru" in warning for warning in revised["payload"]["advertencias"])
+    assert [c[0] for c in gh.calls] == ["get_file_contents"]
+
+    done = session.resume({"accion": "aprobar"})
+    assert done["estado"] == "completado"
+    assert [c[0] for c in gh.calls] == [
+        "get_file_contents", "get_file_contents", "create_branch", "push_files", "create_pull_request"
+    ]
+    assert gh.calls[3][1]["files"][0]["content"] == revised["payload"]["yaml_nuevo"]
 
 
 def test_persistencia_reanuda_tras_reconstruir_el_grafo(env) -> None:

@@ -1,14 +1,13 @@
-import os
 from pathlib import Path
 
 import pytest
 
-from src.tools.buscar_columna import buscar_columna
+from src.tools.dbt.buscar_columna import buscar_columna
 from src.tools.common import default_manifest_path
-from src.tools.info_proyecto import info_proyecto, detect_tests_key
-from src.tools.leer_modelo import leer_modelo
-from src.tools.listar_modelos import listar_modelos
-from src.tools.sql_columns import select_columns
+from src.tools.dbt.info_proyecto import info_proyecto, detect_tests_key
+from src.tools.dbt.leer_modelo import leer_modelo
+from src.tools.dbt.listar_modelos import listar_modelos
+from src.tools.dbt.sql_columns import select_columns
 
 
 def _contract(result: dict) -> None:
@@ -16,10 +15,8 @@ def _contract(result: dict) -> None:
 
 
 # --- info_proyecto
-def test_info_proyecto_ok(manifest_path: Path, project_dir: Path) -> None:
-    for f in project_dir.rglob("*.yml"):
-        os.utime(f, (0, 0))
-    res = info_proyecto(manifest_path=manifest_path, project_dir=project_dir)
+def test_info_proyecto_ok(manifest_path: Path) -> None:
+    res = info_proyecto(manifest_path=manifest_path)
     _contract(res)
     data = res["data"]
     assert res["ok"] and data["dbt_version"] == "2.0.8"
@@ -28,12 +25,6 @@ def test_info_proyecto_ok(manifest_path: Path, project_dir: Path) -> None:
     assert data["packages"] == ["dbt_utils"]
     assert data["dbt_expectations_installed"] is False
     assert data["generated_at"].startswith("2026-10-18")
-    assert data["warnings"] == []
-
-
-def test_info_proyecto_warns_when_stale(manifest_path: Path, project_dir: Path) -> None:
-    res = info_proyecto(manifest_path=manifest_path, project_dir=project_dir)
-    assert any("desactualizado" in w for w in res["data"]["warnings"])
 
 
 def test_manifest_missing(tmp_path: Path) -> None:
@@ -79,15 +70,14 @@ def test_listar_modelos_invalid_input(manifest_path: Path) -> None:
 def test_buscar_columna_documentada(manifest_path: Path) -> None:
     res = buscar_columna("customer_id", "orders", manifest_path=manifest_path)
     (match,) = res["data"]["coincidencias"]
-    assert match["origen"] == "documentada" and match["tabla"] == "orders"
+    assert match["origen"] == "metadata-manifest" and match["tabla"] == "orders"
     assert match["schema_path"] == "models/marts/orders.yml"
 
 
-def test_buscar_columna_sin_documentar_cae_a_sql(manifest_path: Path) -> None:
+def test_buscar_columna_no_busca_en_sql_si_no_esta_en_manifest(manifest_path: Path) -> None:
     res = buscar_columna("subtotal", manifest_path=manifest_path)
-    assert res["ok"]
-    assert {m["origen"] for m in res["data"]["coincidencias"]} == {"solo_en_sql"}
-    assert res["data"]["coincidencias"][0]["tabla"] == "stg_orders"
+    assert not res["ok"]
+    assert res["error"]["code"] == "COLUMN_NOT_FOUND"
 
 
 def test_buscar_columna_en_varios_modelos(manifest_path: Path) -> None:

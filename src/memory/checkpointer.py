@@ -11,9 +11,14 @@ from langgraph.checkpoint.sqlite import SqliteSaver
 from src.tools.common import ROOT
 
 
-def get_checkpointer(path: str | Path | None = None) -> SqliteSaver:
-    """Abre (o crea) la base SQLite indicada por SQLITE_PATH."""
+def resolve_sqlite_path(path: str | Path | None = None) -> Path:
+    """Resuelve el mismo archivo SQLite usado para checkpoints y trazas."""
     raw = Path(path or os.environ.get("SQLITE_PATH", "data/agent.db"))
     file = raw if raw.is_absolute() else ROOT / raw
     file.parent.mkdir(parents=True, exist_ok=True)
-    return SqliteSaver(sqlite3.connect(file, check_same_thread=False))
+    return file
+
+
+def get_checkpointer(path: str | Path | None = None) -> SqliteSaver:
+    """Abre (o crea) la base SQLite indicada por SQLITE_PATH."""
+    return SqliteSaver(sqlite3.connect(resolve_sqlite_path(path), check_same_thread=False))

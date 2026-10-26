@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Annotated, Any, Literal, TypedDict
 
 from langchain_core.messages import AIMessage, AnyMessage, HumanMessage, SystemMessage, ToolMessage
+from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
@@ -16,15 +17,18 @@ from langgraph.types import interrupt
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from src.tools.common import default_project_dir
-from src.tools.pr import GitHubClient, crear_pr, repo_path_for
+from src.tools.github.pr import GitHubClient, crear_pr, repo_path_for
 from src.tools.skills import listar_skills
-from src.tools.validar_yaml import validar_yaml
-from src.tools.yaml_edit import unified_diff
+from src.tools.dbt.validar_yaml import validar_yaml
+from src.tools.dbt.yaml_edit import unified_diff
+from src.memory.trace_store import record_trace
 
+from .message_content import content_to_text
 from .tools import build_tools, llm_view
 
 MAX_STEPS = 14
 MAX_RETRIES = 2
+MAX_BASE_REFRESHES = 2
 
 SYSTEM_PROMPT = """Sos un agente que traduce pedidos en lenguaje natural a tests de dbt y prepara una Pull Request.
 Respondé siempre en español, breve y claro.
@@ -57,6 +61,7 @@ class AgentState(TypedDict, total=False):
     pr: dict[str, Any] | None
     status: str
     retries: int
+    base_refreshes: int
     steps: int
     trace: Annotated[list[dict[str, Any]], operator.add]
 
@@ -85,6 +90,7 @@ def build_graph(
     manifest_path: str | Path | None = None,
     project_dir: str | Path | None = None,
     profiles_dir: str | Path | None = None,
+    trace_db_path: str | Path | None = None,
     repo: str | None = None,
     base: str | None = None,
 ) -> Any:
@@ -102,12 +108,26 @@ def build_graph(
         response = llm_tools.invoke([system, *state["messages"]])
         return {"messages": [response], "steps": steps, "status": "explorando", "trace": [_entry("agent", "llm", True, started)]}
 
+    def trace_call(config: RunnableConfig, node: str, name: str, started: float, inputs: Any, output: Any) -> None:
+        error = output.get("error") if isinstance(output, dict) else None
+        record_trace(
+            thread_id=str(config.get("configurable", {}).get("thread_id", "unknown")),
+            node=node,
+            name=name,
+            ok=bool(output.get("ok", False)) if isinstance(output, dict) else True,
+            duration_ms=round((time.monotonic() - started) * 1000),
+            error_code=error.get("code") if isinstance(error, dict) else None,
+            input_data=inputs,
+            output_data=output,
+            path=trace_db_path,
+        )
+
     def route_agent(state: AgentState) -> Literal["tools", "ask_user", "__end__"]:
         if state.get("status") == "error":
             return END
         return "tools" if getattr(state["messages"][-1], "tool_calls", None) else "ask_user"
 
-    def run_tools(state: AgentState) -> dict[str, Any]:
+    def run_tools(state: AgentState, config: RunnableConfig) -> dict[str, Any]:
         out: list[ToolMessage] = []
         trace: list[dict[str, Any]] = []
         update: dict[str, Any] = {}
@@ -125,17 +145,26 @@ def build_graph(
                 update.update(proposal=result["data"], validation=None)
             out.append(ToolMessage(llm_view(call["name"], result), tool_call_id=call["id"], name=call["name"]))
             trace.append(_entry("tools", call["name"], result["ok"], started, (result.get("error") or {}).get("code")))
+            trace_call(config, "tools", call["name"], started, call["args"], result)
         return {"messages": out, "trace": trace, **update}
 
     def route_tools(state: AgentState) -> Literal["validate", "agent"]:
         return "validate" if state.get("proposal") and state.get("validation") is None else "agent"
 
-    def validate(state: AgentState) -> dict[str, Any]:
+    def validate(state: AgentState, config: RunnableConfig) -> dict[str, Any]:
         started = time.monotonic()
         proposal = state["proposal"]
         res = validar_yaml(
             proposal["schema_path"], proposal["yaml_nuevo"],
             manifest_path=manifest_path, project_dir=project_dir, profiles_dir=profiles_dir,
+        )
+        trace_call(
+            config,
+            "validate",
+            "validar_yaml",
+            started,
+            {"schema_path": proposal["schema_path"], "contenido_yaml": proposal["yaml_nuevo"]},
+            res,
         )
         trace = [_entry("validate", "validar_yaml", res["ok"], started, (res["error"] or {}).get("code"))]
         if res["ok"]:
@@ -157,7 +186,7 @@ def build_graph(
         return "review"
 
     def ask_user(state: AgentState) -> dict[str, Any]:
-        answer = interrupt({"tipo": "pregunta", "mensaje": str(state["messages"][-1].content)})
+        answer = interrupt({"tipo": "pregunta", "mensaje": content_to_text(state["messages"][-1].content)})
         text = answer if isinstance(answer, str) else json.dumps(answer, ensure_ascii=False)
         return {"messages": [HumanMessage(text)]}
 
@@ -192,6 +221,9 @@ def build_graph(
     def route_review(state: AgentState) -> Literal["create_pr", "apply_edit", "reject", "review"]:
         return {"aprobar": "create_pr", "editar": "apply_edit", "rechazar": "reject"}.get(state["decision"]["accion"], "review")
 
+    def route_create_pr(state: AgentState) -> Literal["validate", "__end__"]:
+        return "validate" if state.get("proposal") and state.get("validation") is None else END
+
     def apply_edit(state: AgentState) -> dict[str, Any]:
         proposal = dict(state["proposal"])
         proposal["yaml_nuevo"] = state["decision"]["contenido_yaml"]
@@ -204,7 +236,7 @@ def build_graph(
         text = "Cambio rechazado; no se creó ninguna PR." + (f" Motivo: {motivo}" if motivo else "")
         return {"messages": [AIMessage(text)], "status": "rechazado", "trace": [_entry("reject", "usuario", True, time.monotonic())]}
 
-    def create_pr(state: AgentState) -> dict[str, Any]:
+    def create_pr(state: AgentState, config: RunnableConfig) -> dict[str, Any]:
         started = time.monotonic()
         proposal = state["proposal"]
         target = f"{proposal['modelo']}.{proposal['columna']}" if proposal.get("columna") else proposal["modelo"]
@@ -214,9 +246,46 @@ def build_graph(
             f"test(dbt): {proposal['test']} en {target}", _pr_body(state),
             client=github_client, repo=repo, base=base,
         )
+        trace_call(
+            config,
+            "create_pr",
+            "crear_pr",
+            started,
+            {
+                "schema_path": proposal["schema_path"],
+                "modelo": proposal["modelo"],
+                "test": proposal["test"],
+                "columna": proposal.get("columna"),
+                "yaml_original": proposal["yaml_original"],
+                "yaml_nuevo": proposal["yaml_nuevo"],
+            },
+            res,
+        )
         trace = [_entry("create_pr", "crear_pr", res["ok"], started, (res["error"] or {}).get("code"))]
         if res["ok"]:
             data = res["data"]
+            if data.get("necesita_revision"):
+                refreshes = state.get("base_refreshes", 0) + 1
+                if refreshes > MAX_BASE_REFRESHES:
+                    text = "La rama base volvió a cambiar varias veces. No se creó la PR; iniciá una nueva propuesta sobre la versión actual."
+                    return {"messages": [AIMessage(text)], "status": "error_pr", "base_refreshes": refreshes, "trace": trace}
+                proposal = dict(proposal)
+                proposal["yaml_original"] = data["contenido_base_actual"]
+                proposal["yaml_nuevo"] = data["contenido_fusionado"]
+                proposal["diff"] = unified_diff(
+                    proposal["yaml_original"], proposal["yaml_nuevo"], proposal["schema_path"]
+                )
+                proposal["advertencias"] = [
+                    *proposal.get("advertencias", []),
+                    "La rama base cambió después de la primera revisión. Se fusionaron cambios no conflictivos; revisa y aprueba nuevamente el diff actualizado.",
+                ]
+                return {
+                    "proposal": proposal,
+                    "validation": None,
+                    "decision": None,
+                    "base_refreshes": refreshes,
+                    "trace": trace,
+                }
             text = f"PR creada: {data['url']} (rama `{data['rama']}`)."
             return {"messages": [AIMessage(text)], "pr": data, "status": "pr_creada", "trace": trace}
         error = res["error"]
@@ -236,5 +305,5 @@ def build_graph(
     graph.add_conditional_edges("review", route_review, ["create_pr", "apply_edit", "reject", "review"])
     graph.add_edge("apply_edit", "validate")
     graph.add_edge("reject", END)
-    graph.add_edge("create_pr", END)
+    graph.add_conditional_edges("create_pr", route_create_pr, ["validate", END])
     return graph.compile(checkpointer=checkpointer)

@@ -8,6 +8,8 @@ from typing import Any
 from langchain_core.messages import HumanMessage
 from langgraph.types import Command
 
+from .message_content import content_to_text
+
 
 class AgentSession:
     """Un hilo (thread_id) del agente. El estado persiste en el checkpointer."""
@@ -39,6 +41,6 @@ class AgentSession:
             kind = "pregunta" if payload["tipo"] == "pregunta" else "aprobacion"
             return {"estado": kind, "payload": payload, "trace": result.get("trace", [])}
         status = result.get("status")
-        last = result["messages"][-1].content if result.get("messages") else ""
+        last = content_to_text(result["messages"][-1].content) if result.get("messages") else ""
         estado = {"pr_creada": "completado", "rechazado": "rechazado"}.get(status, "error")
-        return {"estado": estado, "mensaje": str(last), "pr": result.get("pr"), "trace": result.get("trace", [])}
+        return {"estado": estado, "mensaje": last, "pr": result.get("pr"), "trace": result.get("trace", [])}
