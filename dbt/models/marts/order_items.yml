@@ -26,6 +26,8 @@ models:
         entity:
           type: foreign
           name: product
+        data_tests:
+          - unique
       - name: ordered_at
         granularity: day
         dimension:
