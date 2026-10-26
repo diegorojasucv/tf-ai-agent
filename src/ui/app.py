@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import sys
 from pathlib import Path
+from urllib.parse import urlencode
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
@@ -12,6 +13,7 @@ import streamlit as st  # noqa: E402
 
 from src.agents.runner import AgentSession  # noqa: E402
 from src.agents.llm_errors import classify_llm_error  # noqa: E402
+from src.memory.trace_store import get_trace_events  # noqa: E402
 from src.tools.common import ToolError  # noqa: E402
 from src.tools.dbt.info_proyecto import info_proyecto  # noqa: E402
 from src.ui import deps  # noqa: E402
@@ -93,7 +95,41 @@ def _approval_card(payload: dict, session: AgentSession) -> None:
         st.rerun()
 
 
+def _trace_detail(thread_id: str) -> None:
+    st.title("Detalle de trazabilidad")
+    st.caption("Entradas y salidas persistidas por invocación. Los valores sensibles conocidos se redactan.")
+    st.link_button("Volver al agente", "?", icon=":material/arrow_back:")
+    try:
+        events = get_trace_events(thread_id)
+    except Exception as exc:  # noqa: BLE001 - errores de lectura de observabilidad
+        st.error(f"No se pudo leer la trazabilidad ({type(exc).__name__}).")
+        return
+    if not events:
+        st.info("Todavía no hay eventos guardados para esta conversación.")
+        return
+
+    failed = sum(not event["ok"] for event in events)
+    first, second, third = st.columns(3)
+    first.metric("Invocaciones", len(events))
+    second.metric("Con error", failed)
+    third.metric("Duración total", f"{sum(e['duration_ms'] for e in events)} ms")
+    for index, event in enumerate(events, start=1):
+        state = "OK" if event["ok"] else f"Error · {event['error_code'] or 'sin código'}"
+        label = f"{index}. {event['name']} · {state} · {event['duration_ms']} ms"
+        with st.expander(label, expanded=index == len(events)):
+            st.caption(f"{event['timestamp']} · nodo: {event['node']} · evento: {event['id']}")
+            st.markdown("**Entrada**")
+            st.json(event["input"])
+            st.markdown("**Salida**")
+            st.json(event["output"])
+
+
 def main() -> None:
+    trace_thread = st.query_params.get("trace_thread")
+    if trace_thread:
+        _trace_detail(trace_thread)
+        return
+
     st.title("dbt Test Agent")
     st.caption("Pedí un test en lenguaje natural; el agente lo propone, vos lo aprobás y se abre la PR.")
     st.session_state.setdefault("history", [])
@@ -111,6 +147,15 @@ def main() -> None:
             st.error(info["error"]["message"])
         with st.expander("Trazabilidad"):
             st.dataframe(st.session_state.get("trace", []), use_container_width=True)
+            session = st.session_state.get("session")
+            if session:
+                trace_url = f"?{urlencode({'trace_thread': session.thread_id})}"
+                st.link_button(
+                    "Ver entradas y salidas",
+                    trace_url,
+                    icon=":material/open_in_new:",
+                    width="stretch",
+                )
 
     for role, text in st.session_state.history:
         with st.chat_message(role):

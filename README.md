@@ -56,7 +56,7 @@ flowchart LR
 - **Estado/memoria:** checkpointer SQLite (`SQLITE_PATH`); cada conversación es un `thread_id` reanudable.
 - **HITL:** `interrupt()` en `ask_user` (preguntas) y `review` (aprobación).
 - **Integración externa:** GitHub MCP (`get_file_contents`, `create_branch`, `push_files`, `create_pull_request`).
-- **Trazabilidad:** cada paso registra herramienta, éxito, código de error y latencia (`trace` en el estado).
+- **Trazabilidad:** el resumen por paso se conserva en el estado (`trace`) y el detalle de entradas/salidas se persiste en `tool_traces` dentro del SQLite configurado por `SQLITE_PATH`. El panel incluye un enlace que abre el detalle cronológico en otra pestaña; las claves sensibles conocidas se redactan.
 
 ## 7. Decisiones técnicas
 

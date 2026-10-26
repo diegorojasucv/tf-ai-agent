@@ -55,7 +55,10 @@ def main() -> int:
     saver = get_checkpointer(db)
 
     def make_graph(github: RecordingGitHub):
-        return build_graph(llm, github_client=github, checkpointer=saver, repo="eval/eval", base="main")
+        return build_graph(
+            llm, github_client=github, checkpointer=saver, trace_db_path=db,
+            repo="eval/eval", base="main",
+        )
 
     results = run_all(casos, make_graph)
     summary = summarize(results)

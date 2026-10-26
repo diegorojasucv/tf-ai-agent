@@ -57,13 +57,19 @@ def test_harness_con_llm_simulado(tmp_path, monkeypatch: pytest.MonkeyPatch) -> 
         call("generar_test", modelo="products", test="accepted_range", columna="product_price", argumentos_json=args),
     ])
     gh = RecordingGitHub()
-    graph = build_graph(llm, github_client=gh, checkpointer=get_checkpointer(tmp_path / "e.db"), repo="o/r", base="main")
+    graph = build_graph(
+        llm, github_client=gh, checkpointer=get_checkpointer(tmp_path / "e.db"),
+        trace_db_path=tmp_path / "e.db", repo="o/r", base="main",
+    )
     res = run_case(caso, graph, gh, "t-eval")
     assert res["task_success"] and res["resultado"] == "pr_creada" and res["tool_selection"] == 1.0
     assert not res["pr_antes_de_aprobar"] and res["pasos_llm"] == 2
     # un LLM que responde cualquier cosa no debe contar como éxito
     llm2 = ScriptedLLM([AIMessage("no sé")])
     gh2 = RecordingGitHub()
-    graph2 = build_graph(llm2, github_client=gh2, checkpointer=get_checkpointer(tmp_path / "e2.db"), repo="o/r", base="main")
+    graph2 = build_graph(
+        llm2, github_client=gh2, checkpointer=get_checkpointer(tmp_path / "e2.db"),
+        trace_db_path=tmp_path / "e2.db", repo="o/r", base="main",
+    )
     bad = run_case(caso, graph2, gh2, "t-eval-2")
     assert not bad["task_success"] and bad["resultado"] == "pregunta" and gh2.calls == []

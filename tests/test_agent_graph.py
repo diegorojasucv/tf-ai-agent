@@ -7,6 +7,7 @@ from langchain_core.messages import AIMessage
 from src.agents.graph import build_graph
 from src.agents.runner import AgentSession
 from src.memory.checkpointer import get_checkpointer
+from src.memory.trace_store import get_trace_events
 from src.tools.dbt import validar_yaml as validar_mod
 from src.tools.common import ToolError
 
@@ -59,8 +60,9 @@ def env(manifest_path: Path, project_dir: Path, tmp_path: Path):
     def make(script: list[AIMessage], gh: FakeGitHub | None = None, db: str = "agent.db"):
         llm = ScriptedLLM(script)
         gh = gh or FakeGitHub(base)
+        database = tmp_path / db
         graph = build_graph(
-            llm, github_client=gh, checkpointer=get_checkpointer(tmp_path / db),
+            llm, github_client=gh, checkpointer=get_checkpointer(database), trace_db_path=database,
             manifest_path=manifest_path, project_dir=project_dir, repo="o/r", base="main",
         )
         return llm, gh, graph
@@ -87,6 +89,22 @@ def test_recorrido_principal_con_aprobacion_y_pr(env) -> None:
     assert pushed["content"] == payload["yaml_nuevo"] and gh.calls[2][1]["branch"] != "main"
     tools_used = [t["herramienta"] for t in done["trace"] if t["nodo"] in {"tools", "validate", "create_pr"}]
     assert tools_used == ["cargar_skill", "buscar_columna", "generar_test", "validar_yaml", "crear_pr"]
+
+
+def test_guarda_entradas_y_salidas_completas_de_las_tools(env, tmp_path: Path) -> None:
+    _, _, graph = env([call("generar_test", **GENERAR)], db="tool-traces.db")
+    turn = AgentSession(graph, "t-traces").send("agrega rango")
+
+    assert turn["estado"] == "aprobacion"
+    events = get_trace_events("t-traces", tmp_path / "tool-traces.db")
+    tool_event = next(event for event in events if event["name"] == "generar_test")
+    validation_event = next(event for event in events if event["name"] == "validar_yaml")
+    assert tool_event["input"]["modelo"] == "stg_orders"
+    assert tool_event["input"]["columna"] == "subtotal"
+    assert tool_event["output"]["data"]["test"] == "dbt_utils.accepted_range"
+    assert "yaml_nuevo" in tool_event["output"]["data"]
+    assert validation_event["input"]["schema_path"] == "models/staging/stg_orders.yml"
+    assert validation_event["output"]["data"]["valido"] is True
 
 
 def test_pregunta_al_usuario_y_continua(env) -> None:

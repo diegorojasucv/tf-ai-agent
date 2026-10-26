@@ -7,6 +7,7 @@ from streamlit.testing.v1 import AppTest
 
 from src.agents.graph import build_graph
 from src.memory.checkpointer import get_checkpointer
+from src.memory.trace_store import record_trace
 from src.ui import deps
 from tests.test_agent_graph import GENERAR, FakeGitHub, ScriptedLLM, call, parse_ok  # noqa: F401
 
@@ -20,8 +21,9 @@ def app(manifest_path: Path, project_dir: Path, tmp_path: Path, monkeypatch: pyt
 
     def load() -> object:
         llm = ScriptedLLM([call("generar_test", **GENERAR)])
+        database = tmp_path / "ui.db"
         return build_graph(
-            llm, github_client=gh, checkpointer=get_checkpointer(tmp_path / "ui.db"),
+            llm, github_client=gh, checkpointer=get_checkpointer(database), trace_db_path=database,
             manifest_path=manifest_path, project_dir=project_dir, repo="o/r", base="main",
         )
 
@@ -61,6 +63,7 @@ def test_ui_muestra_solo_texto_de_bloque_llm(manifest_path: Path, project_dir: P
         llm,
         github_client=FakeGitHub(""),
         checkpointer=get_checkpointer(tmp_path / "ui-content.db"),
+        trace_db_path=tmp_path / "ui-content.db",
         manifest_path=manifest_path,
         project_dir=project_dir,
         repo="o/r",
@@ -95,6 +98,7 @@ def test_ui_muestra_error_amigable_para_google_503(
         UnavailableLLM(),
         github_client=FakeGitHub(""),
         checkpointer=get_checkpointer(tmp_path / "ui-503.db"),
+        trace_db_path=tmp_path / "ui-503.db",
         manifest_path=manifest_path,
         project_dir=project_dir,
         repo="o/r",
@@ -113,6 +117,32 @@ def test_ui_muestra_error_amigable_para_google_503(
     assert "temporalmente saturado" in rendered
     assert "vuelve a enviar el pedido" in rendered
     assert "GoogleAPIError" not in rendered
+
+
+def test_ui_detalle_de_trazas_abre_vista_por_thread_id(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    database = tmp_path / "trace-detail.db"
+    monkeypatch.setenv("SQLITE_PATH", str(database))
+    record_trace(
+        thread_id="detail-thread",
+        node="tools",
+        name="buscar_columna",
+        ok=True,
+        duration_ms=12,
+        input_data={"nombre_columna": "product_id"},
+        output_data={"ok": True, "data": {"coincidencias": [{"tabla": "products"}]}, "error": None},
+    )
+    st.cache_resource.clear()
+    at = AppTest.from_file(APP, default_timeout=30).run()
+    at.query_params["trace_thread"] = "detail-thread"
+    at.run()
+
+    assert not at.exception
+    assert any(title.value == "Detalle de trazabilidad" for title in at.title)
+    assert any("buscar_columna" in exp.label for exp in at.expander)
+    rendered = " ".join(element.value for element in at.json)
+    assert "product_id" in rendered and "products" in rendered
 
 
 def test_ui_config_incompleta_muestra_mensaje(monkeypatch: pytest.MonkeyPatch) -> None:

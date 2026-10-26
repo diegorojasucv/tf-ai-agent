@@ -8,7 +8,7 @@ def test_google_503_recibe_mensaje_de_saturacion() -> None:
     category, message = classify_llm_error(exc)
     assert category == "service_unavailable"
     assert "temporalmente saturado" in message
-    assert "No se creó una PR" in message
+    assert "vuelve a enviar el pedido" in message
     assert "high demand" not in message
 
 

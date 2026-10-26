@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Annotated, Any, Literal, TypedDict
 
 from langchain_core.messages import AIMessage, AnyMessage, HumanMessage, SystemMessage, ToolMessage
+from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
@@ -20,6 +21,7 @@ from src.tools.github.pr import GitHubClient, crear_pr, repo_path_for
 from src.tools.skills import listar_skills
 from src.tools.dbt.validar_yaml import validar_yaml
 from src.tools.dbt.yaml_edit import unified_diff
+from src.memory.trace_store import record_trace
 
 from .message_content import content_to_text
 from .tools import build_tools, llm_view
@@ -88,6 +90,7 @@ def build_graph(
     manifest_path: str | Path | None = None,
     project_dir: str | Path | None = None,
     profiles_dir: str | Path | None = None,
+    trace_db_path: str | Path | None = None,
     repo: str | None = None,
     base: str | None = None,
 ) -> Any:
@@ -105,12 +108,26 @@ def build_graph(
         response = llm_tools.invoke([system, *state["messages"]])
         return {"messages": [response], "steps": steps, "status": "explorando", "trace": [_entry("agent", "llm", True, started)]}
 
+    def trace_call(config: RunnableConfig, node: str, name: str, started: float, inputs: Any, output: Any) -> None:
+        error = output.get("error") if isinstance(output, dict) else None
+        record_trace(
+            thread_id=str(config.get("configurable", {}).get("thread_id", "unknown")),
+            node=node,
+            name=name,
+            ok=bool(output.get("ok", False)) if isinstance(output, dict) else True,
+            duration_ms=round((time.monotonic() - started) * 1000),
+            error_code=error.get("code") if isinstance(error, dict) else None,
+            input_data=inputs,
+            output_data=output,
+            path=trace_db_path,
+        )
+
     def route_agent(state: AgentState) -> Literal["tools", "ask_user", "__end__"]:
         if state.get("status") == "error":
             return END
         return "tools" if getattr(state["messages"][-1], "tool_calls", None) else "ask_user"
 
-    def run_tools(state: AgentState) -> dict[str, Any]:
+    def run_tools(state: AgentState, config: RunnableConfig) -> dict[str, Any]:
         out: list[ToolMessage] = []
         trace: list[dict[str, Any]] = []
         update: dict[str, Any] = {}
@@ -128,17 +145,26 @@ def build_graph(
                 update.update(proposal=result["data"], validation=None)
             out.append(ToolMessage(llm_view(call["name"], result), tool_call_id=call["id"], name=call["name"]))
             trace.append(_entry("tools", call["name"], result["ok"], started, (result.get("error") or {}).get("code")))
+            trace_call(config, "tools", call["name"], started, call["args"], result)
         return {"messages": out, "trace": trace, **update}
 
     def route_tools(state: AgentState) -> Literal["validate", "agent"]:
         return "validate" if state.get("proposal") and state.get("validation") is None else "agent"
 
-    def validate(state: AgentState) -> dict[str, Any]:
+    def validate(state: AgentState, config: RunnableConfig) -> dict[str, Any]:
         started = time.monotonic()
         proposal = state["proposal"]
         res = validar_yaml(
             proposal["schema_path"], proposal["yaml_nuevo"],
             manifest_path=manifest_path, project_dir=project_dir, profiles_dir=profiles_dir,
+        )
+        trace_call(
+            config,
+            "validate",
+            "validar_yaml",
+            started,
+            {"schema_path": proposal["schema_path"], "contenido_yaml": proposal["yaml_nuevo"]},
+            res,
         )
         trace = [_entry("validate", "validar_yaml", res["ok"], started, (res["error"] or {}).get("code"))]
         if res["ok"]:
@@ -210,7 +236,7 @@ def build_graph(
         text = "Cambio rechazado; no se creó ninguna PR." + (f" Motivo: {motivo}" if motivo else "")
         return {"messages": [AIMessage(text)], "status": "rechazado", "trace": [_entry("reject", "usuario", True, time.monotonic())]}
 
-    def create_pr(state: AgentState) -> dict[str, Any]:
+    def create_pr(state: AgentState, config: RunnableConfig) -> dict[str, Any]:
         started = time.monotonic()
         proposal = state["proposal"]
         target = f"{proposal['modelo']}.{proposal['columna']}" if proposal.get("columna") else proposal["modelo"]
@@ -219,6 +245,21 @@ def build_graph(
             proposal["yaml_original"], proposal["yaml_nuevo"], proposal["modelo"], proposal["test"],
             f"test(dbt): {proposal['test']} en {target}", _pr_body(state),
             client=github_client, repo=repo, base=base,
+        )
+        trace_call(
+            config,
+            "create_pr",
+            "crear_pr",
+            started,
+            {
+                "schema_path": proposal["schema_path"],
+                "modelo": proposal["modelo"],
+                "test": proposal["test"],
+                "columna": proposal.get("columna"),
+                "yaml_original": proposal["yaml_original"],
+                "yaml_nuevo": proposal["yaml_nuevo"],
+            },
+            res,
         )
         trace = [_entry("create_pr", "crear_pr", res["ok"], started, (res["error"] or {}).get("code"))]
         if res["ok"]:
