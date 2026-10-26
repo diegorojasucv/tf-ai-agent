@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import os
 import sys
 from pathlib import Path
 from urllib.parse import urlencode
@@ -16,15 +18,88 @@ from src.agents.llm_errors import classify_llm_error  # noqa: E402
 from src.memory.trace_store import get_trace_events  # noqa: E402
 from src.tools.common import ToolError  # noqa: E402
 from src.tools.dbt.info_proyecto import info_proyecto  # noqa: E402
+from src.tools.github.github_mcp import get_github_tools  # noqa: E402
 from src.ui import deps  # noqa: E402
 
-st.set_page_config(page_title="dbt Test Agent", page_icon=None, layout="wide")
+st.set_page_config(page_title="Data Quality Agent", page_icon=None, layout="wide")
 logger = logging.getLogger(__name__)
 
 
 @st.cache_resource
 def _graph():
     return deps.load_graph()
+
+
+def _tool_schema(tool) -> dict:
+    schema = tool.args_schema
+    if isinstance(schema, dict):
+        return schema
+    if hasattr(schema, "model_json_schema"):
+        return schema.model_json_schema()
+    if hasattr(schema, "schema"):
+        return schema.schema()
+    return {}
+
+
+def _github_mcp_inventory() -> dict:
+    cached = st.session_state.get("github_mcp_inventory")
+    if cached is not None:
+        return cached
+
+    if not os.environ.get("GITHUB_MCP_URL") or not os.environ.get("GITHUB_TOKEN"):
+        inventory = {"tools": [], "error": "Configura GITHUB_MCP_URL y GITHUB_TOKEN para conectar GitHub MCP."}
+    else:
+        try:
+            tools = asyncio.run(get_github_tools())
+            inventory = {
+                "tools": [
+                    {
+                        "name": tool.name,
+                        "description": tool.description or "",
+                        "schema": _tool_schema(tool),
+                    }
+                    for tool in tools
+                ],
+                "error": None,
+            }
+        except ToolError as exc:
+            inventory = {"tools": [], "error": f"No se pudo conectar ({exc.code}): {exc.message}"}
+
+    st.session_state.github_mcp_inventory = inventory
+    return inventory
+
+
+def _mcp_section() -> None:
+    with st.expander("MCP conectados", on_change="rerun") as section:
+        if not section.open:
+            return
+
+        if st.button("Actualizar MCP", key="actualizar_mcp", icon=":material/refresh:"):
+            st.session_state.pop("github_mcp_inventory", None)
+            st.rerun()
+
+        inventory = _github_mcp_inventory()
+        if inventory["error"]:
+            st.warning(inventory["error"], title="GitHub MCP no conectado")
+            return
+
+        tools = inventory["tools"]
+        st.success(f"GitHub MCP conectado · {len(tools)} tools disponibles")
+        for tool in sorted(tools, key=lambda item: item["name"]):
+            with st.expander(tool["name"]):
+                if tool["description"]:
+                    st.write(tool["description"])
+                schema = tool["schema"]
+                properties = schema.get("properties", {})
+                required = set(schema.get("required", []))
+                if not properties:
+                    st.caption("No requiere parámetros.")
+                for name, details in properties.items():
+                    details = details if isinstance(details, dict) else {}
+                    kind = details.get("type", "valor")
+                    requirement = "requerido" if name in required else "opcional"
+                    description = details.get("description", "")
+                    st.markdown(f"- `{name}` ({kind}, {requirement})" + (f": {description}" if description else ""))
 
 
 def _reset() -> None:
@@ -130,7 +205,7 @@ def main() -> None:
         _trace_detail(trace_thread)
         return
 
-    st.title("dbt Test Agent")
+    st.title("Data Quality Agent")
     st.caption("Pedí un test en lenguaje natural; el agente lo propone, vos lo aprobás y se abre la PR.")
     st.session_state.setdefault("history", [])
 
@@ -145,6 +220,7 @@ def main() -> None:
             st.write("Paquetes: " + ", ".join(data["packages"]))
         else:
             st.error(info["error"]["message"])
+        _mcp_section()
         with st.expander("Trazabilidad"):
             st.dataframe(st.session_state.get("trace", []), use_container_width=True)
             session = st.session_state.get("session")

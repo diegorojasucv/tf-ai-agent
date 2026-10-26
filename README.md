@@ -1,8 +1,8 @@
-# dbt Test Agent
+# Data Quality Agent
 
 ## 1. Nombre del proyecto
 
-**dbt Test Agent**: agente que traduce pedidos en lenguaje natural a tests de dbt y abre una Pull Request en GitHub.
+**Data Quality Agent**: agente que traduce pedidos en lenguaje natural a tests de dbt y abre una Pull Request en GitHub.
 
 ## 2. Integrantes
 
