@@ -1,3 +1,4 @@
+import sqlite3
 from pathlib import Path
 from typing import Any
 
@@ -7,7 +8,7 @@ from langchain_core.messages import AIMessage
 from src.agents.graph import build_graph
 from src.agents.runner import AgentSession
 from src.memory.checkpointer import get_checkpointer
-from src.memory.trace_store import get_trace_events
+from src.memory.trace_store import get_trace_events, record_trace
 from src.tools.dbt import validar_yaml as validar_mod
 from src.tools.common import ToolError
 
@@ -117,6 +118,58 @@ def test_guarda_entradas_y_salidas_completas_de_las_tools(env, tmp_path: Path) -
     assert "yaml_nuevo" in tool_event["output"]["data"]
     assert validation_event["input"]["schema_path"] == "models/staging/stg_orders.yml"
     assert validation_event["output"]["data"]["valido"] is True
+
+
+def test_guarda_tokens_en_la_fila_de_cada_tool_sin_duplicar(env, tmp_path: Path) -> None:
+    def usage(i: int, o: int) -> dict[str, int]:
+        return {"input_tokens": i, "output_tokens": o, "total_tokens": i + o}
+
+    two_tools = AIMessage("", tool_calls=[
+        {"name": "cargar_skill", "args": {"nombre": "dbt-testing"}, "id": "a"},
+        {"name": "listar_modelos", "args": {}, "id": "b"},
+    ])
+    question = AIMessage("¿En qué modelo?")
+    script = [two_tools, question, call("generar_test", **GENERAR)]
+    for msg, u in zip(script, [usage(100, 20), usage(150, 30), usage(200, 40)]):
+        msg.usage_metadata = u
+    _, _, graph = env(script, db="tokens.db")
+    session = AgentSession(graph, "t-tokens")
+    assert session.send("agrega rango")["estado"] == "pregunta"
+    assert session.resume("stg_orders")["estado"] == "aprobacion"
+
+    with sqlite3.connect(tmp_path / "tokens.db") as conn:
+        rows = conn.execute(
+            "SELECT name, input_tokens, output_tokens, total_tokens FROM tool_traces "
+            "WHERE thread_id = 't-tokens' ORDER BY id"
+        ).fetchall()
+        total = conn.execute(
+            "SELECT SUM(input_tokens), SUM(output_tokens), SUM(total_tokens) FROM tool_traces "
+            "WHERE thread_id = 't-tokens'"
+        ).fetchone()
+    assert rows == [
+        ("cargar_skill", 100, 20, 120),
+        ("listar_modelos", None, None, None),
+        ("ask_user", 150, 30, 180),
+        ("generar_test", 200, 40, 240),
+        ("validar_yaml", None, None, None),
+    ]
+    assert total == (450, 90, 540)
+
+
+def test_migra_tabla_existente_sin_columnas_de_tokens(tmp_path: Path) -> None:
+    database = tmp_path / "old.db"
+    with sqlite3.connect(database) as conn:
+        conn.execute(
+            "CREATE TABLE tool_traces (id INTEGER PRIMARY KEY AUTOINCREMENT, thread_id TEXT NOT NULL, "
+            "timestamp TEXT NOT NULL, node TEXT NOT NULL, name TEXT NOT NULL, ok INTEGER NOT NULL, "
+            "duration_ms INTEGER NOT NULL, error_code TEXT, input_json TEXT NOT NULL, output_json TEXT NOT NULL)"
+        )
+    record_trace(
+        thread_id="x", node="agent", name="llm", ok=True, duration_ms=1, input_data={}, output_data={},
+        tokens={"input_tokens": 5, "output_tokens": 2, "total_tokens": 7}, path=database,
+    )
+    with sqlite3.connect(database) as conn:
+        assert conn.execute("SELECT total_tokens FROM tool_traces").fetchone() == (7,)
 
 
 def test_pregunta_al_usuario_y_continua(env) -> None:

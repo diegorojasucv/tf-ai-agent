@@ -34,6 +34,8 @@ CREATE INDEX IF NOT EXISTS idx_tool_traces_thread_id_id
     ON tool_traces(thread_id, id);
 """
 
+_TOKEN_COLUMNS = ("input_tokens", "output_tokens", "total_tokens")
+
 
 def _redact(value: Any, depth: int = 0) -> Any:
     if depth > 20:
@@ -65,6 +67,10 @@ def init_trace_store(path: str | Path | None = None) -> Path:
     with sqlite3.connect(database, timeout=10) as connection:
         connection.execute("PRAGMA busy_timeout = 10000")
         connection.executescript(_SCHEMA)
+        existing = {row[1] for row in connection.execute("PRAGMA table_info(tool_traces)")}
+        for column in _TOKEN_COLUMNS:
+            if column not in existing:
+                connection.execute(f"ALTER TABLE tool_traces ADD COLUMN {column} INTEGER")
     return database
 
 
@@ -78,6 +84,7 @@ def record_trace(
     input_data: Any,
     output_data: Any,
     error_code: str | None = None,
+    tokens: dict[str, Any] | None = None,
     path: str | Path | None = None,
 ) -> None:
     """Guarda una invocación sin permitir que un fallo de logging interrumpa el agente."""
@@ -87,8 +94,9 @@ def record_trace(
             connection.execute("PRAGMA busy_timeout = 10000")
             connection.execute(
                 """INSERT INTO tool_traces
-                   (thread_id, timestamp, node, name, ok, duration_ms, error_code, input_json, output_json)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   (thread_id, timestamp, node, name, ok, duration_ms, error_code, input_json, output_json,
+                    input_tokens, output_tokens, total_tokens)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     thread_id,
                     datetime.now(timezone.utc).isoformat(),
@@ -99,6 +107,7 @@ def record_trace(
                     error_code,
                     _json(input_data),
                     _json(output_data),
+                    *[(tokens or {}).get(column) for column in _TOKEN_COLUMNS],
                 ),
             )
     except Exception:  # noqa: BLE001 - el registro de trazas no debe romper la ejecución del agente
@@ -112,7 +121,7 @@ def get_trace_events(thread_id: str, path: str | Path | None = None) -> list[dic
         connection.row_factory = sqlite3.Row
         rows = connection.execute(
             """SELECT id, thread_id, timestamp, node, name, ok, duration_ms,
-                      error_code, input_json, output_json
+                      error_code, input_json, output_json, input_tokens, output_tokens, total_tokens
                FROM tool_traces WHERE thread_id = ? ORDER BY id""",
             (thread_id,),
         ).fetchall()

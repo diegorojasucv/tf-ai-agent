@@ -68,6 +68,11 @@ class AgentState(TypedDict, total=False):
     trace: Annotated[list[dict[str, Any]], operator.add]
 
 
+def _tokens(message: Any) -> dict[str, Any]:
+    usage = getattr(message, "usage_metadata", None) or {}
+    return {key: usage.get(key) for key in ("input_tokens", "output_tokens", "total_tokens")}
+
+
 def _entry(nodo: str, herramienta: str, ok: bool, started: float, codigo: str | None = None) -> dict[str, Any]:
     return {"nodo": nodo, "herramienta": herramienta, "ok": ok, "codigo_error": codigo, "ms": round((time.monotonic() - started) * 1000)}
 
@@ -111,7 +116,10 @@ def build_graph(
         response = llm_tools.invoke([system, *state["messages"]])
         return {"messages": [response], "steps": steps, "status": "explorando", "trace": [_entry("agent", "llm", True, started)]}
 
-    def trace_call(config: RunnableConfig, node: str, name: str, started: float, inputs: Any, output: Any) -> None:
+    def trace_call(
+        config: RunnableConfig, node: str, name: str, started: float, inputs: Any, output: Any,
+        tokens: dict[str, Any] | None = None,
+    ) -> None:
         error = output.get("error") if isinstance(output, dict) else None
         record_trace(
             thread_id=str(config.get("configurable", {}).get("thread_id", "unknown")),
@@ -122,6 +130,7 @@ def build_graph(
             error_code=error.get("code") if isinstance(error, dict) else None,
             input_data=inputs,
             output_data=output,
+            tokens=tokens,
             path=trace_db_path,
         )
 
@@ -134,7 +143,7 @@ def build_graph(
         out: list[ToolMessage] = []
         trace: list[dict[str, Any]] = []
         update: dict[str, Any] = {}
-        for call in state["messages"][-1].tool_calls:
+        for index, call in enumerate(state["messages"][-1].tool_calls):
             started = time.monotonic()
             tool = tools.get(call["name"])
             if tool is None:
@@ -148,7 +157,8 @@ def build_graph(
                 update.update(proposal=result["data"], validation=None)
             out.append(ToolMessage(llm_view(call["name"], result), tool_call_id=call["id"], name=call["name"]))
             trace.append(_entry("tools", call["name"], result["ok"], started, (result.get("error") or {}).get("code")))
-            trace_call(config, "tools", call["name"], started, call["args"], result)
+            # Los tokens son de la llamada al LLM que pidió las tools: van solo en la primera para no duplicar al sumar.
+            trace_call(config, "tools", call["name"], started, call["args"], result, tokens=_tokens(state["messages"][-1]) if index == 0 else None)
         return {"messages": out, "trace": trace, **update}
 
     def route_tools(state: AgentState) -> Literal["validate", "agent"]:
@@ -188,8 +198,11 @@ def build_graph(
             return END if state.get("status") == "error" else "agent"
         return "review"
 
-    def ask_user(state: AgentState) -> dict[str, Any]:
-        answer = interrupt({"tipo": "pregunta", "mensaje": content_to_text(state["messages"][-1].content)})
+    def ask_user(state: AgentState, config: RunnableConfig) -> dict[str, Any]:
+        question = content_to_text(state["messages"][-1].content)
+        answer = interrupt({"tipo": "pregunta", "mensaje": question})
+        # Después del interrupt: el nodo se re-ejecuta al reanudar y así se registra una sola vez.
+        trace_call(config, "ask_user", "ask_user", time.monotonic(), {"mensaje": question}, {"ok": True, "respuesta": answer}, tokens=_tokens(state["messages"][-1]))
         text = answer if isinstance(answer, str) else json.dumps(answer, ensure_ascii=False)
         return {"messages": [HumanMessage(text)]}
 
