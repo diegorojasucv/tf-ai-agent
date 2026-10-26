@@ -16,10 +16,10 @@ from langgraph.types import interrupt
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from src.tools.common import default_project_dir
-from src.tools.pr import GitHubClient, crear_pr, repo_path_for
+from src.tools.github.pr import GitHubClient, crear_pr, repo_path_for
 from src.tools.skills import listar_skills
-from src.tools.validar_yaml import validar_yaml
-from src.tools.yaml_edit import unified_diff
+from src.tools.dbt.validar_yaml import validar_yaml
+from src.tools.dbt.yaml_edit import unified_diff
 
 from .tools import build_tools, llm_view
 

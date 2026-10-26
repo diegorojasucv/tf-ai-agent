@@ -8,7 +8,7 @@ from langchain_core.language_models.chat_models import BaseChatModel
 
 from src.tools.common import ToolError
 
-DEFAULT_MODELS = {"gemini": "gemini-2.5-flash", "openai": "gpt-4o-mini"}
+DEFAULT_MODELS = {"gemini": "gemini-3.1-flash-lite", "openai": "gpt-4o-mini"}
 
 
 def get_llm(provider: str | None = None, model: str | None = None, api_key: str | None = None) -> BaseChatModel:

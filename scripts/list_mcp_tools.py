@@ -9,7 +9,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.tools.common import ToolError  # noqa: E402
-from src.tools.github_mcp import get_github_tools  # noqa: E402
+from src.tools.github.github_mcp import get_github_tools  # noqa: E402
 
 
 def _params(tool) -> list[str]:

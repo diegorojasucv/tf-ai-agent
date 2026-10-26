@@ -8,7 +8,7 @@ from typing import Any
 from langchain_core.tools import BaseTool
 from langchain_mcp_adapters.client import MultiServerMCPClient
 
-from .common import ToolError
+from ..common import ToolError
 
 SERVER_NAME = "github"
 

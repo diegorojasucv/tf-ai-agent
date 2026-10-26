@@ -7,7 +7,7 @@ from langchain_core.messages import AIMessage
 from src.agents.graph import build_graph
 from src.agents.runner import AgentSession
 from src.memory.checkpointer import get_checkpointer
-from src.tools import validar_yaml as validar_mod
+from src.tools.dbt import validar_yaml as validar_mod
 from src.tools.common import ToolError
 
 

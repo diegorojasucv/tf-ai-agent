@@ -14,7 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from ruamel.yaml import YAML
 from ruamel.yaml.error import YAMLError
 
-from .common import ToolError, default_manifest_path, default_profiles_dir, default_project_dir, run_tool
+from ..common import ToolError, default_manifest_path, default_profiles_dir, default_project_dir, run_tool
 from .info_proyecto import detect_tests_key
 from .manifest import load_manifest
 

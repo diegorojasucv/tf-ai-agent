@@ -3,7 +3,7 @@ from typing import Any
 import pytest
 
 from src.tools.common import ToolError
-from src.tools.pr import crear_pr, repo_path_for
+from src.tools.github.pr import crear_pr, repo_path_for
 
 ORIGINAL = "models:\n  - name: orders\n"
 NEW = ORIGINAL + "    data_tests:\n      - not_null\n"

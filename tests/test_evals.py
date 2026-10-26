@@ -4,7 +4,7 @@ from evals.harness import Caso, RecordingGitHub, load_dataset, run_case, summari
 from evals.run_eval import dry_run
 from src.agents.graph import build_graph
 from src.memory.checkpointer import get_checkpointer
-from src.tools import validar_yaml as validar_mod
+from src.tools.dbt import validar_yaml as validar_mod
 from src.tools.common import default_manifest_path
 from tests.test_agent_graph import ScriptedLLM, call
 from langchain_core.messages import AIMessage

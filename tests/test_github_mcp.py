@@ -2,7 +2,7 @@ import asyncio
 
 import pytest
 
-from src.tools import github_mcp
+from src.tools.github import github_mcp
 from src.tools.common import ToolError
 
 

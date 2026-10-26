@@ -9,11 +9,11 @@ Procedimiento para convertir un pedido en un test de dbt válido. Adaptado de la
 
 ## Procedimiento
 
-1. **Contexto:** llamar a `info_proyecto` (clave de tests, paquetes instalados, aviso de manifest desactualizado).
+1. **Contexto:** llamar a `info_proyecto` (clave de tests y paquetes instalados).
 2. **Ubicar el objetivo:** `buscar_columna`.
    - Varias coincidencias (`ambigua: true`, por ejemplo `stg_orders` y `orders`): **preguntar al usuario en qué modelo va el test**. No elegir solo.
-   - `origen: solo_en_sql`: la columna no está documentada; avisarlo, el test se escribe igual en el YAML del modelo.
-   - `COLUMN_NOT_FOUND`: pedir aclaración, no inventar la columna.
+   - `buscar_columna` consulta únicamente las columnas declaradas en el manifest; no inspecciona SQL.
+   - `COLUMN_NOT_FOUND`: pedir aclaración o solicitar que se regenere el manifest si la columna existe en el modelo pero no está documentada allí. No asumir que existe solo porque aparece en el SQL.
 3. **Leer el modelo:** `leer_modelo` para ver tests existentes y el YAML actual. Si el test ya existe, informarlo y no duplicar.
 4. **Elegir el test** en `references/test-catalog.yml` (única fuente de tests permitidos).
 5. **Valores y umbrales:** usar solo los que dio el usuario. Si faltan (por ejemplo la lista de un `accepted_values`), preguntar. Nunca adivinar valores.

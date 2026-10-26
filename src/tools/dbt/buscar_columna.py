@@ -1,4 +1,4 @@
-"""Tool de solo lectura: busca una columna en el manifest (documentada) o en el SQL."""
+"""Tool de solo lectura: busca columnas declaradas en la metadata del manifest dbt."""
 
 from __future__ import annotations
 
@@ -7,9 +7,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from .common import ToolError, default_manifest_path, run_tool
+from ..common import ToolError, default_manifest_path, run_tool
 from .manifest import Manifest, load_manifest
-from .sql_columns import select_columns
 
 
 class BuscarColumnaInput(BaseModel):
@@ -59,33 +58,13 @@ def _display_name(holder: Any) -> str:
     return holder.name
 
 
-def _from_sql(manifest: Manifest, column: str, table: str | None) -> list[dict[str, Any]]:
-    matches: list[dict[str, Any]] = []
-    for node in manifest.models():
-        if table and table.lower() not in _names(node):
-            continue
-        if node.raw_code and column in select_columns(node.raw_code):
-            matches.append(
-                {
-                    "tabla": node.name,
-                    "unique_id": node.unique_id,
-                    "tipo": node.resource_type,
-                    "columna": column,
-                    "descripcion": "",
-                    "origen": "solo_en_sql",
-                    "schema_path": _schema_path(node.patch_path),
-                }
-            )
-    return matches
-
-
 def buscar_columna(
     nombre_columna: str,
     tabla_opcional: str | None = None,
     *,
     manifest_path: str | Path | None = None,
 ) -> dict[str, Any]:
-    """Coincidencias en columnas documentadas; si no hay, fallback al select list del SQL."""
+    """Busca coincidencias solo entre las columnas declaradas en el manifest."""
 
     def handler(args: BuscarColumnaInput) -> dict[str, Any]:
         manifest = load_manifest(manifest_path or default_manifest_path())
@@ -95,7 +74,7 @@ def buscar_columna(
             known = {n for m in [*manifest.models(), *manifest.sources.values()] for n in _names(m)}
             if table.lower() not in known:
                 raise ToolError("MODEL_NOT_FOUND", f"No existe la tabla '{table}'.")
-        matches = _documented(manifest, column, table) or _from_sql(manifest, column, table)
+        matches = _documented(manifest, column, table)
         if not matches:
             raise ToolError(
                 "COLUMN_NOT_FOUND",

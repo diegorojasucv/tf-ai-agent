@@ -15,7 +15,7 @@ from src.agents.graph import build_graph
 from src.agents.llm import DEFAULT_MODELS, get_llm
 from src.memory.checkpointer import get_checkpointer
 from src.tools.common import ToolError
-from src.tools.manifest import load_manifest
+from src.tools.dbt.manifest import load_manifest
 from src.tools.common import default_manifest_path
 
 RESULTS = Path(__file__).parent / "resultados"

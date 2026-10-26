@@ -11,7 +11,7 @@ import streamlit as st  # noqa: E402
 
 from src.agents.runner import AgentSession  # noqa: E402
 from src.tools.common import ToolError  # noqa: E402
-from src.tools.info_proyecto import info_proyecto  # noqa: E402
+from src.tools.dbt.info_proyecto import info_proyecto  # noqa: E402
 from src.ui import deps  # noqa: E402
 
 st.set_page_config(page_title="dbt Test Agent", page_icon=None, layout="wide")
@@ -97,8 +97,6 @@ def main() -> None:
             data = info["data"]
             st.write(f"dbt {data['dbt_version']} | `{data['tests_key']}`")
             st.write("Paquetes: " + ", ".join(data["packages"]))
-            for warning in data["warnings"]:
-                st.warning(warning)
         else:
             st.error(info["error"]["message"])
         with st.expander("Trazabilidad"):

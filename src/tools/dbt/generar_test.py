@@ -8,10 +8,10 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from .common import ToolError, default_manifest_path, default_project_dir, run_tool
+from ..common import ToolError, default_manifest_path, default_project_dir, run_tool
 from .info_proyecto import detect_tests_key
 from .manifest import ADAPTER_PACKAGES, Manifest, load_manifest
-from .skills import load_test_catalog
+from ..skills import load_test_catalog
 from .sql_columns import select_columns
 from .yaml_edit import add_test, unified_diff
 

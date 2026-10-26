@@ -10,7 +10,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from .common import ToolError
+from ..common import ToolError
 
 ADAPTER_PACKAGES = {
     "dbt",

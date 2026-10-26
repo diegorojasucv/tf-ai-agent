@@ -5,7 +5,7 @@ import pytest
 from ruamel.yaml import YAML
 
 from src.tools.common import default_manifest_path
-from src.tools.generar_test import generar_test
+from src.tools.dbt.generar_test import generar_test
 
 
 @pytest.fixture

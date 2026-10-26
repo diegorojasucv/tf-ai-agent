@@ -51,7 +51,7 @@ flowchart LR
 ```
 
 - **LLM:** Gemini por defecto, OpenAI opcional (`LLM_PROVIDER`).
-- **Tools:** `src/tools/` (lectura, generación, validación, PR). Todas devuelven `{ok, data, error}`.
+- **Tools:** `src/tools/dbt/` (metadata, lectura, generación y validación), `src/tools/github/` (MCP y PR), más `src/tools/common.py` y `src/tools/skills.py`. Las tools devuelven `{ok, data, error}`.
 - **Skill:** `src/skills/dbt-testing/` (`SKILL.md` + catálogo de tests + sintaxis), cargada como tool en 3 niveles.
 - **Estado/memoria:** checkpointer SQLite (`SQLITE_PATH`); cada conversación es un `thread_id` reanudable.
 - **HITL:** `interrupt()` en `ask_user` (preguntas) y `review` (aprobación).
@@ -155,7 +155,7 @@ TODO: ejecutar la evaluación con el LLM real y pegar aquí la tabla de resultad
 - `generar_test` cubre 15 tests del catálogo; ampliar es editar `test-catalog.yml`.
 - `ruamel.yaml` puede reformatear mapas en una línea de archivos existentes; el diff lo muestra antes de la PR.
 - La verificación de la base asume que `get_file_contents` devuelve el texto del archivo; confirmar con el servidor real.
-- `buscar_columna` extrae columnas del SQL de forma best-effort (sin parser SQL completo).
-- El manifest debe regenerarse tras cambios en el proyecto (`info_proyecto` avisa si está desactualizado).
+- `buscar_columna` busca columnas declaradas en la metadata del manifest; no inspecciona SQL.
+- Se asume que el manifest local está actualizado y se regenera fuera del agente cuando corresponde.
 - No se mide costo/tokens en la evaluación.
 - Docker verificado construyendo la imagen y levantando la UI; la corrida completa con LLM y GitHub reales depende de tus credenciales.

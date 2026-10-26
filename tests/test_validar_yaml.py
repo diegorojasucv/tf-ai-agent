@@ -2,10 +2,10 @@ from pathlib import Path
 
 import pytest
 
-from src.tools import validar_yaml as mod
+from src.tools.dbt import validar_yaml as mod
 from src.tools.common import ROOT, ToolError, default_manifest_path
-from src.tools.generar_test import generar_test
-from src.tools.validar_yaml import validar_yaml
+from src.tools.dbt.generar_test import generar_test
+from src.tools.dbt.validar_yaml import validar_yaml
 
 GOOD = "models:\n  - name: orders\n    columns:\n      - name: order_id\n        data_tests:\n          - not_null\n"
 

@@ -12,7 +12,7 @@ from typing import Any, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from .common import ROOT, ToolError, default_project_dir, run_tool
+from ..common import ROOT, ToolError, default_project_dir, run_tool
 from .github_mcp import get_github_tools
 
 PROTECTED = {"main", "master", "develop"}

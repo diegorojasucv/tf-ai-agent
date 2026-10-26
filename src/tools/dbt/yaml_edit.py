@@ -11,7 +11,7 @@ from ruamel.yaml import YAML
 from ruamel.yaml.comments import CommentedMap, CommentedSeq
 from ruamel.yaml.scalarstring import DoubleQuotedScalarString
 
-from .common import ToolError
+from ..common import ToolError
 
 
 def _yaml() -> YAML:
