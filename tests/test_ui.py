@@ -81,6 +81,40 @@ def test_ui_muestra_solo_texto_de_bloque_llm(manifest_path: Path, project_dir: P
     assert "{'type': 'text'" not in rendered
 
 
+def test_ui_muestra_error_amigable_para_google_503(
+    manifest_path: Path, project_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class UnavailableLLM:
+        def bind_tools(self, _tools: object) -> "UnavailableLLM":
+            return self
+
+        def invoke(self, _messages: object) -> AIMessage:
+            raise RuntimeError("GoogleAPIError: 503 UNAVAILABLE high demand")
+
+    graph = build_graph(
+        UnavailableLLM(),
+        github_client=FakeGitHub(""),
+        checkpointer=get_checkpointer(tmp_path / "ui-503.db"),
+        manifest_path=manifest_path,
+        project_dir=project_dir,
+        repo="o/r",
+        base="main",
+    )
+    monkeypatch.setattr(deps, "load_graph", lambda: graph)
+    st.cache_resource.clear()
+    at = AppTest.from_file(APP, default_timeout=30).run()
+    at.chat_input[0].set_value("Agrega un test").run()
+
+    rendered = "\n".join(
+        element.value
+        for chat in at.chat_message
+        for element in chat.markdown
+    )
+    assert "temporalmente saturado" in rendered
+    assert "vuelve a enviar el pedido" in rendered
+    assert "GoogleAPIError" not in rendered
+
+
 def test_ui_config_incompleta_muestra_mensaje(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("LLM_API_KEY", raising=False)
     monkeypatch.setattr(deps, "load_graph", deps.load_graph)

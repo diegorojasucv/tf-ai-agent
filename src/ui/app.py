@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import sys
 from pathlib import Path
 
@@ -10,11 +11,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 import streamlit as st  # noqa: E402
 
 from src.agents.runner import AgentSession  # noqa: E402
+from src.agents.llm_errors import classify_llm_error  # noqa: E402
 from src.tools.common import ToolError  # noqa: E402
 from src.tools.dbt.info_proyecto import info_proyecto  # noqa: E402
 from src.ui import deps  # noqa: E402
 
 st.set_page_config(page_title="dbt Test Agent", page_icon=None, layout="wide")
+logger = logging.getLogger(__name__)
 
 
 @st.cache_resource
@@ -49,7 +52,14 @@ def _run(action) -> None:
         _say("assistant", f"Error de configuración ({exc.code}): {exc.message}")
         st.session_state.turn = {"estado": "error"}
     except Exception as exc:  # noqa: BLE001 - frontera de la UI
-        _say("assistant", f"Error inesperado: {type(exc).__name__}: {str(exc)[:300]}")
+        classified = classify_llm_error(exc)
+        if classified:
+            category, message = classified
+            logger.warning("Fallo de proveedor LLM: categoría=%s tipo=%s", category, type(exc).__name__)
+            _say("assistant", message)
+        else:
+            logger.exception("Error inesperado durante la ejecución del agente: tipo=%s", type(exc).__name__)
+            _say("assistant", f"Error inesperado ({type(exc).__name__}). Revisa el log del servidor para más detalles.")
         st.session_state.turn = {"estado": "error"}
 
 
