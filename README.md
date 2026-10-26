@@ -10,7 +10,7 @@
 
 ## 3. Problema
 
-Agregar un test de calidad de datos en dbt exige ubicar el modelo y la columna, elegir el `schema.yml` correcto, respetar la sintaxis de la versión de dbt y abrir una PR. Es repetitivo y propenso a errores.
+Agregar, modificar o eliminar un test de calidad de datos en dbt exige ubicar el modelo y la columna, elegir el `schema.yml` correcto, respetar la sintaxis de la versión de dbt y abrir una PR. Es repetitivo y propenso a errores.
 
 ## 4. Usuario / destinatario
 
@@ -18,12 +18,12 @@ Analytics engineers y equipos de datos que mantienen un proyecto dbt (en este ca
 
 ## 5. Descripción
 
-Ejemplo: *"agrega un test que valide que `amount` en `sales` sea > 0 y < 100000"*.
+Ejemplos: *"agrega un test que valide que `amount` en `sales` sea > 0 y < 100000"*, *"cambiá a warn la severity del not_null de `orders.order_id`"*, *"removemos el accepted_values de `customers.customer_type`"*. Cada pedido cambia un solo test y abre una sola PR.
 
 Flujo principal:
 1. El LLM interpreta el pedido y decide qué tool usar: carga la skill `dbt-testing` y explora con `info_proyecto`, `buscar_columna` y `leer_modelo`.
 2. Si falta un dato o la columna está en varios modelos, **pregunta al usuario**.
-3. `generar_test` produce el YAML nuevo y el diff (no escribe archivos).
+3. `generar_test` (agregar), `modificar_test` o `eliminar_test` producen el YAML nuevo y el diff (no escriben archivos). Al eliminar `unique` o `not_null` se advierte la pérdida de cobertura.
 4. El sistema valida (`validar_yaml`: sintaxis, estructura y `dbt parse` offline).
 5. **Toda propuesta pasa por aprobación humana** (aprobar, editar o rechazar) con `interrupt()`.
 6. Si se aprueba: rama nueva, commit y PR vía GitHub MCP. Nunca se escribe en `main`.
@@ -37,7 +37,7 @@ Diagrama completo y tabla de componentes en [docs/arquitectura/arquitectura.md](
 ```mermaid
 flowchart LR
   U[Usuario / Streamlit] --> A[agent: LLM + tools]
-  A -->|tool calls| T[tools: info_proyecto, buscar_columna, leer_modelo, cargar_skill, generar_test]
+  A -->|tool calls| T[tools: info_proyecto, buscar_columna, leer_modelo, cargar_skill, generar_test, modificar_test, eliminar_test]
   T --> A
   A -->|sin tool call| Q[ask_user: interrupt]
   Q --> A
@@ -133,7 +133,7 @@ python -m pytest                    # todo
 python -m pytest -m "not integration"
 ```
 
-Dataset de 20 casos en `evals/dataset/casos.jsonl`: rangos, tests nativos, relaciones, anomalías, tests entre columnas, ambigüedad, datos faltantes, modelo/columna inexistente, test no soportado, macro inexistente, pedido fuera de alcance, intento de inyección y rechazo humano.
+Dataset de 22 casos en `evals/dataset/casos.jsonl`: rangos, tests nativos, relaciones, anomalías, tests entre columnas, eliminación y modificación de tests, ambigüedad, datos faltantes, modelo/columna inexistente, test no soportado, macro inexistente, pedido fuera de alcance, intento de inyección y rechazo humano.
 
 ```bash
 python -m evals.run_eval --dry-run          # valida el dataset contra el manifest (sin LLM)

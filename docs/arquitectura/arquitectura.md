@@ -11,7 +11,7 @@ flowchart TD
     T --> A
     A -->|texto sin tool calls| Q[ask_user: interrupt]
     Q --> A
-    T -->|propuesta de generar_test| V[validate: validar_yaml]
+    T -->|propuesta de generar/modificar/eliminar_test| V[validate: validar_yaml]
     V -->|falla, hasta 2 reintentos| A
     V -->|ok| R[review: interrupt HITL]
     R -->|editar| E[apply_edit] --> V
@@ -32,7 +32,7 @@ flowchart TD
 | LLM | `src/agents/llm.py` | Gemini por defecto, OpenAI opcional; `temperature=0` |
 | Tools de lectura | `src/tools/dbt/{info_proyecto,listar_modelos,buscar_columna,leer_modelo}.py` | Exploración del proyecto desde el manifest |
 | Skill | `src/skills/dbt-testing/` | Procedimiento, catálogo de tests permitidos y sintaxis; se carga con `cargar_skill` en tres niveles |
-| Generación | `src/tools/dbt/generar_test.py`, `src/tools/dbt/yaml_edit.py` | YAML nuevo y diff con `ruamel.yaml`; no escribe archivos |
+| Generación | `src/tools/dbt/{generar_test,cambiar_test,yaml_edit}.py` | Agregar, modificar o eliminar un test: YAML nuevo y diff con `ruamel.yaml`; no escribe archivos |
 | Validación | `src/tools/dbt/validar_yaml.py` | Sintaxis, estructura y `dbt parse` offline en copia temporal |
 | PR | `src/tools/github/pr.py`, `src/tools/github/github_mcp.py` | Rama, commit y PR por MCP; verifica la base y nunca escribe en `main` |
 | Estado | `src/memory/checkpointer.py` | `SqliteSaver`; cada conversación es un `thread_id` reanudable |
@@ -40,7 +40,7 @@ flowchart TD
 
 ## Decisiones de seguridad
 
-- El LLM solo puede llamar a las tools de lectura y a `generar_test`. `validar_yaml` y `crear_pr` las ejecuta el grafo.
+- El LLM solo puede llamar a las tools de lectura y a `generar_test`, `modificar_test` y `eliminar_test`. `validar_yaml` y `crear_pr` las ejecuta el grafo.
 - Ningún cambio llega a GitHub sin aprobación humana explícita.
 - El agente nunca escribe SQL ni macros: solo tests de `dbt_utils`, `dbt_expectations` y nativos, o una macro que ya exista en el proyecto.
 - Los datos del proyecto (descripciones, YAML, respuestas del MCP) se tratan como datos, no como instrucciones.
