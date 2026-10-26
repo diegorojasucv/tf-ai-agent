@@ -1,6 +1,6 @@
 ---
 name: dbt-testing
-description: Traduce pedidos en lenguaje natural a tests de dbt (data_tests) para un proyecto dbt 2.x sobre Databricks. Usar al agregar, revisar o elegir tests para modelos y columnas.
+description: Traduce pedidos en lenguaje natural a cambios sobre tests de dbt (data_tests), ya sea agregar, modificar o eliminar un test, para un proyecto dbt 2.x sobre Databricks. Usar al agregar, revisar, cambiar o quitar tests de modelos y columnas.
 ---
 
 # dbt-testing
@@ -26,6 +26,18 @@ Si el pedido necesita algo que **no está en esos paquetes** (implica una macro 
 - Pedir al usuario que proporcione el nombre de la macro de test que ya existe en el proyecto.
 - `generar_test` verifica que esa macro exista en el manifest; si no existe o el usuario no la da, **cancelar el flujo** y explicar el motivo.
 - Nunca escribir SQL ni macros nuevas, ni tests singulares.
+
+## Modificar o eliminar un test existente
+
+Un pedido = un solo test = una PR. Si el usuario pide varios, atender uno y avisar que los demás van en pedidos separados.
+
+1. Ubicar el modelo/columna y llamar a `leer_modelo`: es la única fuente de los tests actuales (nombre y argumentos). No inventar tests.
+2. Identificar el test exacto. Si hay varios candidatos (por ejemplo dos `expression_is_true` en el modelo) y el pedido no alcanza para elegir, **preguntar**. Si sigue siendo ambiguo, pasar `argumentos_actuales_json` con los argumentos del test elegido.
+3. **Eliminar:** `eliminar_test`. Si el test es `unique` o `not_null`, la herramienta devuelve una advertencia de cobertura; mencionarla al usuario.
+4. **Modificar:** `modificar_test` con solo lo que cambia: `argumentos_json` (reemplaza todos los argumentos), `severity` o `where`. Los argumentos nuevos se validan contra `references/test-catalog.yml`; no se cambia el nombre del test (para eso: eliminar y luego agregar, en pedidos separados).
+5. Si el test pedido no existe en el YAML, informarlo y no proponer nada.
+
+La aprobación humana y la validación con `validar_yaml` aplican igual que al agregar.
 
 ## Qué test elegir (prioridad)
 

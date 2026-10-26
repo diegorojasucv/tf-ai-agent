@@ -10,6 +10,7 @@ from langchain_core.tools import BaseTool, StructuredTool
 from pydantic import BaseModel, Field
 
 from src.tools.dbt.buscar_columna import buscar_columna
+from src.tools.dbt.cambiar_test import eliminar_test, modificar_test
 from src.tools.dbt.generar_test import generar_test
 from src.tools.dbt.info_proyecto import info_proyecto
 from src.tools.dbt.leer_modelo import leer_modelo
@@ -17,7 +18,12 @@ from src.tools.dbt.listar_modelos import listar_modelos
 from src.tools.skills import cargar_skill
 
 # Campos voluminosos que el LLM no necesita ver; el grafo conserva el resultado completo.
-_HIDDEN = {"leer_modelo": ("yaml",), "generar_test": ("yaml_original", "yaml_nuevo")}
+_HIDDEN = {
+    "leer_modelo": ("yaml",),
+    "generar_test": ("yaml_original", "yaml_nuevo"),
+    "eliminar_test": ("yaml_original", "yaml_nuevo"),
+    "modificar_test": ("yaml_original", "yaml_nuevo"),
+}
 
 
 class _NoArgs(BaseModel):
@@ -49,6 +55,43 @@ class _Generar(BaseModel):
     argumentos_json: str = Field(default="{}", description='Argumentos del test como objeto JSON, p. ej. {"min_value": 0}.')
     severity: str | None = Field(default=None, description="warn o error.")
     where: str | None = Field(default=None, description="Filtro SQL (Spark SQL) opcional.")
+
+
+def _json_obj(raw: str | None) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    """(objeto, error): None en ambos si raw es None."""
+    if raw is None:
+        return None, None
+    try:
+        value = json.loads(raw or "{}")
+    except json.JSONDecodeError:
+        value = None
+    if not isinstance(value, dict):
+        return None, {"ok": False, "data": None, "error": {"code": "INVALID_INPUT", "message": "Los argumentos deben ser un objeto JSON válido."}}
+    return value, None
+
+
+class _Eliminar(BaseModel):
+    modelo: str = Field(description="Modelo donde está el test.")
+    test: str = Field(description="Nombre del test existente, p. ej. not_null o dbt_utils.accepted_range.")
+    columna: str | None = Field(default=None, description="Columna (solo para tests de columna).")
+    argumentos_actuales_json: str = Field(default="{}", description="Argumentos actuales del test (objeto JSON), solo para distinguir entre varios del mismo nombre.")
+
+
+class _Modificar(_Eliminar):
+    argumentos_json: str | None = Field(default=None, description='Nuevos argumentos completos (objeto JSON), p. ej. {"min_value": 0}. Omitir para no cambiarlos.')
+    severity: str | None = Field(default=None, description="warn o error.")
+    where: str | None = Field(default=None, description="Filtro SQL (Spark SQL) opcional.")
+
+
+def _eliminar(argumentos_actuales_json: str = "{}", **kwargs: Any) -> dict[str, Any]:
+    current, err = _json_obj(argumentos_actuales_json)
+    return err or eliminar_test(argumentos_actuales=current, **kwargs)
+
+
+def _modificar(argumentos_actuales_json: str = "{}", argumentos_json: str | None = None, **kwargs: Any) -> dict[str, Any]:
+    current, err = _json_obj(argumentos_actuales_json)
+    new, err2 = _json_obj(argumentos_json)
+    return err or err2 or modificar_test(argumentos_actuales=current, argumentos=new, **kwargs)
 
 
 def _generar(argumentos_json: str = "{}", **kwargs: Any) -> dict[str, Any]:
@@ -94,5 +137,9 @@ def build_tools(
                  "Carga las instrucciones de una skill (o un recurso de su carpeta references/).", _Skill),
             make("generar_test", lambda **kw: _generar(**kw, **with_dir),
                  "Propone un test de dbt para un modelo/columna. No escribe archivos: el usuario aprueba antes de la PR.", _Generar),
+            make("eliminar_test", lambda **kw: _eliminar(**kw, **with_dir),
+                 "Propone eliminar UN test existente de un modelo/columna. No escribe archivos: el usuario aprueba antes de la PR.", _Eliminar),
+            make("modificar_test", lambda **kw: _modificar(**kw, **with_dir),
+                 "Propone modificar UN test existente (argumentos, severity o where). No escribe archivos: el usuario aprueba antes de la PR.", _Modificar),
         ]
     }
