@@ -69,7 +69,7 @@ flowchart LR
 - **Aprobación humana obligatoria** antes de cualquier PR, con diff y resultado de validación.
 - **`push_files`** (un solo commit, sin `sha`) en vez de `create_or_update_file`; antes de subir se verifica que el archivo en la base no cambió.
 - **Persistencia:** SQLite con `SqliteSaver`; permite reanudar tras reiniciar.
-- **Modelo:** Gemini por defecto (`gemini-2.5-flash`), OpenAI soportado; ambos con `temperature=0`.
+- **Modelo:** Gemini por defecto (`gemini-3.1-flash-lite`) u OpenAI (`gpt-4o-mini`) mediante `LLM_PROVIDER`; ambos con `temperature=0`. Las claves específicas son `GEMINI_API_KEY` y `OPENAI_API_KEY`; `LLM_API_KEY` se mantiene como fallback genérico.
 
 ## 8. Instalación
 
@@ -89,7 +89,7 @@ cp .env.example .env   # completar GITHUB_TOKEN, GITHUB_REPO, LLM_*
 
 | Variable | Descripción |
 |---|---|
-| `LLM_PROVIDER`, `LLM_MODEL`, `LLM_API_KEY` | LLM configurable |
+| `LLM_PROVIDER`, `LLM_MODEL`, `GEMINI_API_KEY`, `OPENAI_API_KEY`, `LLM_API_KEY` | LLM configurable; `LLM_API_KEY` es fallback genérico |
 | `GITHUB_TOKEN` | Token fine-grained, un solo repo, permisos mínimos (contenido y PRs) |
 | `GITHUB_REPO` | `owner/repo` destino de las PRs |
 | `BASE_BRANCH` | Rama base (`main`) |

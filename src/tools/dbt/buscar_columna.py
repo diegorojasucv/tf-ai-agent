@@ -37,7 +37,7 @@ def _documented(manifest: Manifest, column: str, table: str | None) -> list[dict
                 "tipo": holder.resource_type,
                 "columna": col.name,
                 "descripcion": col.description,
-                "origen": "documentada",
+                "origen": "metadata-manifest",
                 "schema_path": _schema_path(getattr(holder, "patch_path", None))
                 or holder.original_file_path,
             }

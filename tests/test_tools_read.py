@@ -70,7 +70,7 @@ def test_listar_modelos_invalid_input(manifest_path: Path) -> None:
 def test_buscar_columna_documentada(manifest_path: Path) -> None:
     res = buscar_columna("customer_id", "orders", manifest_path=manifest_path)
     (match,) = res["data"]["coincidencias"]
-    assert match["origen"] == "documentada" and match["tabla"] == "orders"
+    assert match["origen"] == "metadata-manifest" and match["tabla"] == "orders"
     assert match["schema_path"] == "models/marts/orders.yml"
 
 
