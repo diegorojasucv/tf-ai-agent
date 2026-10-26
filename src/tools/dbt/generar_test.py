@@ -137,6 +137,7 @@ def generar_test(
         )
         complex_test = spec is None
         return {
+            "operacion": "crear",
             "modelo": node.name,
             "schema_path": schema_path,
             "test": full_name,

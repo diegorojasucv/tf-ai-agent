@@ -91,6 +91,18 @@ def test_recorrido_principal_con_aprobacion_y_pr(env) -> None:
     assert tools_used == ["cargar_skill", "buscar_columna", "generar_test", "validar_yaml", "crear_pr"]
 
 
+def test_eliminar_test_pasa_por_aprobacion_y_abre_pr(env) -> None:
+    _, gh, graph = env([call("eliminar_test", modelo="stg_orders", test="unique", columna="order_id")])
+    session = AgentSession(graph, "t-del")
+    turn = session.send("sacá el unique de stg_orders.order_id")
+    assert turn["estado"] == "aprobacion" and gh.calls == []
+    assert turn["payload"]["operacion"] == "eliminar" and turn["payload"]["advertencias"]
+    done = session.resume({"accion": "aprobar"})
+    assert done["estado"] == "completado"
+    titles = [c[1]["title"] for c in gh.calls if c[0] == "create_pull_request"]
+    assert titles == ["test(dbt): eliminar unique en stg_orders.order_id"]
+
+
 def test_guarda_entradas_y_salidas_completas_de_las_tools(env, tmp_path: Path) -> None:
     _, _, graph = env([call("generar_test", **GENERAR)], db="tool-traces.db")
     turn = AgentSession(graph, "t-traces").send("agrega rango")

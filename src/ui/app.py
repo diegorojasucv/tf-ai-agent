@@ -143,7 +143,8 @@ def _run(action) -> None:
 def _approval_card(payload: dict, session: AgentSession) -> None:
     target = f"{payload['modelo']}.{payload['columna']}" if payload.get("columna") else payload["modelo"]
     st.subheader("Revisión humana")
-    st.write(f"**Test:** `{payload['test']}` en `{target}`  |  **Archivo:** `{payload['schema_path']}`  |  **Complejidad:** {payload['complejidad']}")
+    operation = {"crear": "Agregar", "modificar": "Modificar", "eliminar": "Eliminar"}.get(payload.get("operacion", "crear"), "Agregar")
+    st.write(f"**{operation} test:** `{payload['test']}` en `{target}`  |  **Archivo:** `{payload['schema_path']}`  |  **Complejidad:** {payload['complejidad']}")
     validation = payload["validacion"]
     if validation["valido"]:
         st.success("Validación OK (sintaxis, estructura y dbt parse offline).")

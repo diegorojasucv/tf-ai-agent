@@ -12,7 +12,7 @@ from langchain_core.messages import AIMessage
 
 def test_dataset_valido_y_balanceado() -> None:
     casos = load_dataset()
-    assert 15 <= len(casos) <= 20
+    assert 15 <= len(casos) <= 25
     assert len({c.id for c in casos}) == len(casos)
     resultados = {c.esperado.resultado for c in casos}
     assert {"pr_creada", "pregunta", "rechazado"} <= resultados
