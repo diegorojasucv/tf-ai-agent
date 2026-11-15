@@ -77,7 +77,6 @@ pip install -r requirements.txt
 ```
 
 Copiar archivo de credenciales:
-
 ```bash
 cp .env.example .env
 ```
@@ -85,24 +84,22 @@ cp .env.example .env
 En `.env`, solo hay que completar el `LLM_API_KEY` y `GITHUB_TOKEN`. Mandar un correo a `darb302@gmail.com` pidiendo estos tokens.
 
 Desde la raíz del repositorio, con Docker:
-
 ```bash
 docker compose up --build
 ```
 
 Sin Docker, activá el entorno virtual creado en el paso 8 y ejecutá desde la raíz del repositorio:
-
 ```bash
 streamlit run src/ui/app.py
 ```
 
-Abrí **http://localhost:8501** para usar el agente.
+Abrí **http://localhost:8501** para usar el agente. Se debería ver una imagen como la siguiente:
 
-Prompt que se pudieran usar para probar el agente:
+![alt text](image.png)
 
-1. Abrir la interfaz y escribir: *"agregá un test que valide que subtotal en stg_orders sea > 0 y < 100000"*.
-2. El agente explora, propone `dbt_utils.accepted_range` y muestra el diff validado.
-3. Aprobar, editar el YAML o rechazar. Al aprobar se abre la PR y se muestra el enlace.
+Donde en el panel izquierdo van a poder ver los MCP conectados y el detalle de trazabilidad de las invocaciones que va haciendo el agente.
+
+Prompt de ejemplos para probar el agente: *"agregá un test que valide que subtotal en stg_orders sea > 0 y < 100000"*
 
 TODO: captura/video de la demo.
 
@@ -142,10 +139,5 @@ El agente persiste en el SQLite definido por `SQLITE_PATH` (por defecto `data/ag
 ## 11. Limitaciones
 
 - No inspecciona datos del warehouse (mejora futura): los valores y umbrales los da el usuario.
-- `generar_test` cubre 15 tests del catálogo; ampliar es editar `test-catalog.yml`.
-- `ruamel.yaml` puede reformatear mapas en una línea de archivos existentes; el diff lo muestra antes de la PR.
-- La verificación de la base asume que `get_file_contents` devuelve el texto del archivo; confirmar con el servidor real.
-- `buscar_columna` busca columnas declaradas en la metadata del manifest; no inspecciona SQL.
-- Se asume que el manifest local está actualizado y se regenera fuera del agente cuando corresponde.
-- No se mide costo/tokens en la evaluación.
-- Docker verificado construyendo la imagen y levantando la UI; la corrida completa con LLM y GitHub reales depende de tus credenciales.
+- Usa solo los test que vienen de los paquetes de dbt, lo cual no permite agregar test demasiados complejos.
+- Se asume que el manifest local siempre está actualizado.
