@@ -84,8 +84,6 @@ cp .env.example .env
 
 En `.env`, solo hay que completar el `LLM_API_KEY` y `GITHUB_TOKEN`. Mandar un correo a `darb302@gmail.com` pidiendo estos tokens.
 
-## 10. Ejecución
-
 Desde la raíz del repositorio, con Docker:
 
 ```bash
@@ -100,7 +98,7 @@ streamlit run src/ui/app.py
 
 Abrí **http://localhost:8501** para usar el agente.
 
-## 11. Uso
+Prompt que se pudieran usar para probar el agente:
 
 1. Abrir la interfaz y escribir: *"agregá un test que valide que subtotal en stg_orders sea > 0 y < 100000"*.
 2. El agente explora, propone `dbt_utils.accepted_range` y muestra el diff validado.
@@ -108,7 +106,7 @@ Abrí **http://localhost:8501** para usar el agente.
 
 TODO: captura/video de la demo.
 
-## 12. Evaluación
+## 9. Evaluación
 
 Tests de tools, grafo (LLM y GitHub mockeados), persistencia SQLite y UI (`AppTest`):
 
@@ -133,7 +131,7 @@ Resultados en `evals/resultados/` (`ultimo.md` y un JSON por corrida).
 
 TODO: ejecutar la evaluación con el LLM real y pegar aquí la tabla de resultados.
 
-## 13. Limitaciones
+## 10. Limitaciones
 
 - No inspecciona datos del warehouse (mejora futura): los valores y umbrales los da el usuario.
 - `generar_test` cubre 15 tests del catálogo; ampliar es editar `test-catalog.yml`.
