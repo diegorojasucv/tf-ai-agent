@@ -131,7 +131,15 @@ Resultados en `evals/resultados/` (`ultimo.md` y un JSON por corrida).
 
 TODO: ejecutar la evaluación con el LLM real y pegar aquí la tabla de resultados.
 
-## 10. Limitaciones
+## 10. Monitoring
+
+El agente persiste en el SQLite definido por `SQLITE_PATH` (por defecto `data/agent.db`) tanto el estado necesario para reanudar conversaciones como las trazas de uso. Las tablas principales son:
+
+- `checkpoints`: estado guardado de cada conversación (`thread_id`), para poder reanudarla.
+- `writes`: actualizaciones intermedias del estado, administradas por LangGraph.
+- `tool_traces`: registro de operaciones instrumentadas: tool/nodo, fecha, resultado, duración, error, entradas/salidas y tokens cuando están disponibles.
+
+## 11. Limitaciones
 
 - No inspecciona datos del warehouse (mejora futura): los valores y umbrales los da el usuario.
 - `generar_test` cubre 15 tests del catálogo; ampliar es editar `test-catalog.yml`.
