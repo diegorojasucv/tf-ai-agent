@@ -2,7 +2,7 @@
 
 ## 1. Nombre del proyecto
 
-**Data Quality Agent**: agente que traduce pedidos en lenguaje natural a tests de dbt y abre una Pull Request en GitHub.
+**Data Quality Agent**: agente que traduce pedidos de data tests en lenguaje natural a tests de dbt y abre una Pull Request en GitHub.
 
 ## 2. Integrantes
 
@@ -10,25 +10,23 @@
 
 ## 3. Problema
 
-Agregar, modificar o eliminar un test de calidad de datos en dbt exige ubicar el modelo y la columna, elegir el `schema.yml` correcto, respetar la sintaxis de la versión de dbt y abrir una PR. Es repetitivo y propenso a errores.
+Agregar, modificar o eliminar un test de calidad de datos en dbt exige ubicar el modelo y la columna, elegir el `schema.yml` correcto, respetar la sintaxis de la versión de dbt y abrir una PR usando git, lo cual hace el proceso repetitivo y propenso a errores, sobre todo a personas no técnicas
 
 ## 4. Usuario / destinatario
 
-Analytics engineers y equipos de datos que mantienen un proyecto dbt (en este caso sobre Databricks) en GitHub.
+Cualquier analista que interactue con los datos y tenga permisos en el repositorio de dbt en GitHub.
 
-## 5. Descripción
+## 5. Ejemplos de Usos
 
 Ejemplos: *"agrega un test que valide que `amount` en `sales` sea > 0 y < 100000"*, *"cambiá a warn la severity del not_null de `orders.order_id`"*, *"removemos el accepted_values de `customers.customer_type`"*. Cada pedido cambia un solo test y abre una sola PR.
 
 Flujo principal:
 1. El LLM interpreta el pedido y decide qué tool usar: carga la skill `dbt-testing` y explora con `info_proyecto`, `buscar_columna` y `leer_modelo`.
-2. Si falta un dato o la columna está en varios modelos, **pregunta al usuario**.
-3. `generar_test` (agregar), `modificar_test` o `eliminar_test` producen el YAML nuevo y el diff (no escriben archivos). Al eliminar `unique` o `not_null` se advierte la pérdida de cobertura.
-4. El sistema valida (`validar_yaml`: sintaxis, estructura y `dbt parse` offline).
-5. **Toda propuesta pasa por aprobación humana** (aprobar, editar o rechazar) con `interrupt()`.
-6. Si se aprueba: rama nueva, commit y PR vía GitHub MCP. Nunca se escribe en `main`.
-
-El LLM no puede validar ni crear PRs: esas acciones las ejecuta el grafo.
+2. Si falta un dato o la columna está en varios modelos, **pregunta al usuario cual usar**.
+3. `generar_test` (agregar), `modificar_test` o `eliminar_test` modifican los archivos YAML correspondiente donde viven los tests.
+4. El sistema valida los archivos modificados (`validar_yaml`: sintaxis, estructura y `dbt parse` offline).
+5. **Human-in-the loop**: El usuario aprueba, edita o rechaza el cambio realizado por el agente.
+6. Si se aprueba: se crea una rama nueva, commitea y abre una PR vía GitHub MCP.
 
 ## 6. Arquitectura
 
@@ -62,18 +60,15 @@ flowchart LR
 
 - **Agente único, sin RAG:** el proyecto dbt es estructurado y se consulta por manifest; RAG no aporta valor.
 - **El agente no se conecta al warehouse:** trabaja sobre archivos y manifest; la validación usa `dbt parse` con un profile dummy (`ci/profiles.yml`).
-- **dbt 2.x (binario):** el proyecto corre con dbt 2.0.8 (manifest v12). Usa `data_tests:` con `arguments:`. No hay paquete Python de dbt-core/dbt-databricks que instalar.
 - **Contrato de tools:** todas devuelven `{ok, data, error}` con entradas validadas con pydantic.
-- **Manifest versionado:** `dbt/target/` no se ignora para facilitar la lectura remota; se puede revisar más adelante.
-- **Solo tests de `dbt_utils`, `dbt_expectations` y nativos:** el agente nunca escribe SQL ni macros. Si el test no está en esos paquetes, pide una macro existente o cancela (evita alucinaciones).
+- **Manifest vive en el repo:** Para simplificar se deja servido el manifest en el repo de donde se lee la metadata del proyecto de dbt. Lo ideal es que esta metadata siempre este actualizada cada vez que se va a interactuar con el agente y la traiga de un s3, por ejemplo.
+- **Solo tests de `dbt_utils`, `dbt_expectations` y nativos:** el agente nunca escribe SQL ni macros. Si el test que pide el usuario no está en esos paquetes, pide una macro existente o cancela.
 - **Aprobación humana obligatoria** antes de cualquier PR, con diff y resultado de validación.
-- **`push_files`** (un solo commit, sin `sha`) en vez de `create_or_update_file`; antes de subir se verifica que el archivo en la base no cambió.
 - **Persistencia:** SQLite con `SqliteSaver`; permite reanudar tras reiniciar.
-- **Modelo:** Gemini por defecto (`gemini-3.1-flash-lite`) u OpenAI (`gpt-4o-mini`) mediante `LLM_PROVIDER`; ambos con `temperature=0`. Las claves específicas son `GEMINI_API_KEY` y `OPENAI_API_KEY`; `LLM_API_KEY` se mantiene como fallback genérico.
 
-## 8. Instalación
+## 8. Ejecución del agente
 
-Requisitos: Python 3.11+. `requirements.txt` incluye `dbt==2.0.8` (dbt v2, instalado con pip), necesario para `dbt parse`. Si ya tenés el binario `dbt` 2.x en el `PATH`, se usa ese.
+El primer paso seria clonar el repo y luego ejecutar los siguientes comandos:
 
 ```bash
 python3.11 -m venv .venv
@@ -81,40 +76,29 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-## 9. Configuración
+Copiar archivo de credenciales:
 
 ```bash
-cp .env.example .env   # completar GITHUB_TOKEN, GITHUB_REPO, LLM_*
+cp .env.example .env
 ```
 
-| Variable | Descripción |
-|---|---|
-| `LLM_PROVIDER`, `LLM_MODEL`, `GEMINI_API_KEY`, `OPENAI_API_KEY`, `LLM_API_KEY` | LLM configurable; `LLM_API_KEY` es fallback genérico |
-| `GITHUB_TOKEN` | Token fine-grained, un solo repo, permisos mínimos (contenido y PRs) |
-| `GITHUB_REPO` | `owner/repo` destino de las PRs |
-| `BASE_BRANCH` | Rama base (`main`) |
-| `GITHUB_MCP_URL` | URL del GitHub MCP Server remoto |
-| `DBT_PROJECT_DIR`, `DBT_MANIFEST_PATH`, `DBT_PROFILES_DIR` | Proyecto dbt, manifest y profile dummy |
-| `SQLITE_PATH` | Base del checkpointer |
-
-Nunca versionar `.env`.
+En `.env`, solo hay que completar el `LLM_API_KEY` y `GITHUB_TOKEN`. Mandar un correo a `darb302@gmail.com` pidiendo estos tokens.
 
 ## 10. Ejecución
 
-```bash
-python scripts/refresh_manifest.py     # regenera el manifest sin conexión
-python scripts/list_mcp_tools.py        # lista las tools del GitHub MCP
-streamlit run src/ui/app.py             # interfaz
-```
-
-Con Docker (instala los paquetes dbt, regenera el manifest y levanta la UI en http://localhost:8501):
+Desde la raíz del repositorio, con Docker:
 
 ```bash
-cp .env.example .env   # completar variables
 docker compose up --build
 ```
 
-La base SQLite se guarda en el volumen `agent-data`.
+Sin Docker, activá el entorno virtual creado en el paso 8 y ejecutá desde la raíz del repositorio:
+
+```bash
+streamlit run src/ui/app.py
+```
+
+Abrí **http://localhost:8501** para usar el agente.
 
 ## 11. Uso
 
@@ -141,7 +125,7 @@ python -m evals.run_eval                    # corre los casos con el LLM configu
 python -m evals.run_eval --ids c01 c05      # casos puntuales
 ```
 
-Cada caso usa un usuario simulado (respuestas a preguntas y decisión de aprobación) y un GitHub falso que registra las llamadas: **no se abren PRs reales**. `dbt parse` sí corre de verdad.
+Cada caso usa un usuario simulado (respuestas a preguntas y decisión de aprobación) y un GitHub falso que registra las llamadas: **no se abren PRs reales**. La validación ejecuta `dbt parse` de verdad, pero con el perfil dummy y sin conexión al warehouse.
 
 Métricas: `task_success` (resultado esperado, test/modelo/columna/argumentos correctos y ninguna escritura antes de aprobar), `tool_selection` (recall de tools esperadas; 0 si usa una prohibida), pasos del LLM, errores de tool, latencia (promedio y p95) y `pr_antes_de_aprobar` (debe ser 0).
 

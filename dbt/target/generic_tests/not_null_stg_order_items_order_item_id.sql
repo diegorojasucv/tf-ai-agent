@@ -1,0 +1,1 @@
+{{ test_not_null(column_name="order_item_id", model=get_where_subquery(ref('stg_order_items'))) }}

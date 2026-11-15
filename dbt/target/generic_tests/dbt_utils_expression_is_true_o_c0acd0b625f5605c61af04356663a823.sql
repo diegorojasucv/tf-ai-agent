@@ -1,0 +1,1 @@
+{{ dbt_utils.test_expression_is_true(expression="order_items_subtotal = subtotal", model=get_where_subquery(ref('orders'))) }}
