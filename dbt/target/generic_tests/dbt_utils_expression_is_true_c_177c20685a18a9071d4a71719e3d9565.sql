@@ -1,0 +1,1 @@
+{{ dbt_utils.test_expression_is_true(expression="lifetime_spend_pretax + lifetime_tax_paid = lifetime_spend", model=get_where_subquery(ref('customers'))) }}

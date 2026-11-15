@@ -1,0 +1,1 @@
+{{ test_accepted_values(column_name="customer_type", model=get_where_subquery(ref('customers')), values=["new","returning"]) }}

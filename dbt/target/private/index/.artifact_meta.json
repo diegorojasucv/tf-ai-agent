@@ -1,0 +1,20 @@
+{
+  "target_dir": "/Users/diegorojas/Documents/github projects/tp-agent-itba/dbt/target",
+  "fingerprints": {
+    "run_results.json": {
+      "size": 40408,
+      "modified_secs": 1792353873
+    },
+    "semantic_manifest.json": {
+      "size": 27820,
+      "modified_secs": 1792353835
+    },
+    "manifest.json": {
+      "size": 1227153,
+      "modified_secs": 1792353873
+    }
+  },
+  "write_source": "DirectWrite",
+  "context_dir": null,
+  "context_fingerprints": {}
+}
